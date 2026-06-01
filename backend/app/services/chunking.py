@@ -219,12 +219,12 @@ class SemanticChunker:
 
         Uses regex-based detection of function/class definitions.
         """
+        import re
+
         chunks = []
         lines = content.split("\n")
 
         if language == "python":
-            import re
-
             for i, line in enumerate(lines):
                 if re.match(r"^\s*(def|class)\s+(\w+)", line):
                     match = re.match(r"^\s*(def|class)\s+(\w+)", line)
@@ -253,6 +253,47 @@ class SemanticChunker:
                             metadata={"source": "fallback_regex"},
                         )
                         chunks.append(chunk)
+
+        elif language == "csharp":
+            for i, line in enumerate(lines):
+                # Match methods, properties, classes, interfaces
+                match = re.match(
+                    r"^\s*(public|private|protected|internal)?\s*(static)?\s*(?:class|interface|public|private|protected|internal|void|string|int|bool|async|Task)[\s\w<>,]+(\w+)\s*[\({]",
+                    line,
+                )
+                if match or re.match(r"^\s*(public|private|protected|internal)?\s*(static)?\s*(class|interface)\s+(\w+)", line):
+                    # Extract name
+                    name_match = re.search(r"(class|interface|public|private|protected|internal|void|async|Task)\s+(\w+)", line)
+                    if name_match:
+                        name = name_match.group(2)
+                    else:
+                        name = "unnamed"
+
+                    # Find the end - look for closing brace at same or lower indentation
+                    indent = len(line) - len(line.lstrip())
+                    end_line = i + 1
+                    brace_count = line.count("{") - line.count("}")
+
+                    for j in range(i + 1, len(lines)):
+                        brace_count += lines[j].count("{") - lines[j].count("}")
+                        if brace_count == 0 and lines[j].strip():
+                            end_line = j + 1
+                            break
+                    else:
+                        end_line = len(lines)
+
+                    chunk_content = "\n".join(lines[i:end_line])
+                    chunk = CodeChunk(
+                        file=file_path,
+                        language=language,
+                        type="method_definition",
+                        name=name,
+                        start_line=i + 1,
+                        end_line=end_line,
+                        content=chunk_content,
+                        metadata={"source": "fallback_regex"},
+                    )
+                    chunks.append(chunk)
 
         return chunks
 
@@ -298,6 +339,13 @@ class SemanticChunker:
             ".java": "java",
             ".cpp": "cpp",
             ".c": "c",
+            ".cs": "csharp",
+            ".php": "php",
+            ".kotlin": "kotlin",
+            ".swift": "swift",
+            ".scala": "scala",
+            ".rb": "ruby",
+            ".rs": "rust",
         }
 
         for ext, lang in ext_to_lang.items():
@@ -320,5 +368,10 @@ def is_code_file(file_path: str) -> bool:
         ".c",
         ".rb",
         ".rs",
+        ".cs",
+        ".php",
+        ".kotlin",
+        ".swift",
+        ".scala",
     }
     return any(file_path.endswith(ext) for ext in code_extensions)

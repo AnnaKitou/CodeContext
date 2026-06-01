@@ -1,13 +1,18 @@
 from pathlib import Path
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
     """Application settings loaded from environment variables."""
 
+    model_config = SettingsConfigDict(
+        env_file=str(Path(__file__).resolve().parent.parent.parent.parent / ".env"),
+        case_sensitive=False
+    )
+
     # Anthropic API
     anthropic_api_key: str
-    anthropic_model: str = "claude-3-5-sonnet-20241022"
+    anthropic_model: str = "claude-opus-4-8"
     anthropic_embedding_model: str = "text-embedding-3-small"
 
     # GitHub (for MCP)
@@ -40,10 +45,6 @@ class Settings(BaseSettings):
     # Features
     use_mcp: bool = True
     use_semantic_chunking: bool = True
-
-    class Config:
-        env_file = str(Path(__file__).resolve().parent.parent.parent.parent / ".env")
-        case_sensitive = False
 
 
 settings = Settings()

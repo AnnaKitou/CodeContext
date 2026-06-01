@@ -93,7 +93,6 @@ class RAGRetriever:
             results = self.collection.query(
                 query_texts=[query],
                 n_results=top_k,
-                where={"relevance": {"$gte": score_threshold}} if score_threshold > 0 else None,
             )
 
             chunks = []
@@ -104,6 +103,10 @@ class RAGRetriever:
 
                     # Convert distance to similarity score (1 - distance for cosine)
                     relevance_score = max(0, 1 - distance)
+
+                    # Filter by score threshold
+                    if relevance_score < score_threshold:
+                        continue
 
                     chunk = RetrievedChunk(
                         file=metadata.get("file", "unknown"),

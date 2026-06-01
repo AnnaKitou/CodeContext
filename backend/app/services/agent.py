@@ -7,6 +7,7 @@ to synthesize comprehensive answers with citations.
 
 import json
 import logging
+import requests
 
 from app.models.schemas import Citation
 
@@ -33,7 +34,7 @@ class CodeContextAgent:
         """
         self.anthropic_client = anthropic_client
         self.mcp_server = mcp_server
-        self.model = "claude-3-5-sonnet-20241022"
+        self.model = "claude-opus-4-8"
 
     async def answer(
         self,
@@ -82,30 +83,44 @@ Here are relevant code snippets from the codebase:
 
 Please answer the question based on the provided code context."""
 
-            # Prepare tools if use_mcp
-            tools = self._get_mcp_tools() if use_mcp else []
+            # Get API key from client
+            api_key = self.anthropic_client.api_key
 
-            # Call Claude API
-            response = self.anthropic_client.messages.create(
-                model=self.model,
-                max_tokens=2048,
-                system=system_prompt,
-                tools=tools if tools else None,
-                tool_choice="auto" if tools else None,
-                messages=[
+            # Call Claude API via direct HTTP request
+            headers = {
+                "x-api-key": api_key,
+                "anthropic-version": "2023-06-01",
+                "content-type": "application/json",
+            }
+
+            payload = {
+                "model": self.model,
+                "max_tokens": 2048,
+                "system": system_prompt,
+                "messages": [
                     {"role": "user", "content": user_message},
                 ],
+            }
+
+            response = requests.post(
+                "https://api.anthropic.com/v1/messages",
+                json=payload,
+                headers=headers,
             )
 
             # Extract answer from response
             answer_text = ""
             mcp_calls = []
 
-            for block in response.content:
-                if hasattr(block, "text"):
-                    answer_text += block.text
-                elif hasattr(block, "type") and block.type == "tool_use":
-                    mcp_calls.append(block.name)
+            if response.status_code == 200:
+                response_data = response.json()
+                for block in response_data.get("content", []):
+                    if block.get("type") == "text":
+                        answer_text += block.get("text", "")
+                    elif block.get("type") == "tool_use":
+                        mcp_calls.append(block.get("name", ""))
+            else:
+                raise Exception(f"API error ({response.status_code}): {response.text}")
 
             # Extract citations from answer and context
             citations = self._extract_citations(answer_text, retrieved_chunks)

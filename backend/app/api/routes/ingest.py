@@ -1,7 +1,9 @@
 import logging
 import os
 import shutil
+import stat
 import subprocess
+import time
 from pathlib import Path
 from typing import Set
 
@@ -87,14 +89,23 @@ async def ingest_codebase(request: IngestRequest) -> IngestResponse:
             languages=sorted(list(languages)),
         )
 
+    except HTTPException:
+        raise
     except Exception as e:
-        logger.error(f"Ingest failed: {str(e)}")
+        logger.error(f"Ingest failed: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Ingest failed: {str(e)}")
     finally:
         # Cleanup: remove cloned repository
         if repo_path and os.path.exists(repo_path):
             try:
-                shutil.rmtree(repo_path)
+                # On Windows, use onerror to handle permission issues
+                def handle_remove_error(func, path, exc_info):
+                    if not os.access(path, os.W_OK):
+                        os.chmod(path, stat.S_IWUSR | stat.S_IRUSR)
+                        time.sleep(0.1)
+                        func(path)
+
+                shutil.rmtree(repo_path, onerror=handle_remove_error)
                 logger.info(f"Cleaned up temporary repository at {repo_path}")
             except Exception as e:
                 logger.warning(f"Failed to cleanup {repo_path}: {str(e)}")
@@ -114,6 +125,8 @@ async def clone_repository(repo_url: str, repo_name: str) -> str:
     Raises:
         HTTPException: If cloning fails
     """
+    import asyncio
+
     temp_dir = Path("./temp_repos")
     temp_dir.mkdir(exist_ok=True)
     repo_path = temp_dir / repo_name
@@ -123,19 +136,23 @@ async def clone_repository(repo_url: str, repo_name: str) -> str:
         shutil.rmtree(repo_path)
 
     try:
-        # Clone with depth=1 for faster cloning
-        result = subprocess.run(
-            [
-                "git",
-                "clone",
-                "--depth=1",
-                "--single-branch",
-                repo_url,
-                str(repo_path),
-            ],
-            capture_output=True,
-            text=True,
-            timeout=60,
+        # Run git clone in executor to avoid blocking event loop
+        loop = asyncio.get_event_loop()
+        result = await loop.run_in_executor(
+            None,
+            lambda: subprocess.run(
+                [
+                    "git",
+                    "clone",
+                    "--depth=1",
+                    "--single-branch",
+                    repo_url,
+                    str(repo_path),
+                ],
+                capture_output=True,
+                text=True,
+                timeout=60,
+            ),
         )
 
         if result.returncode != 0:
