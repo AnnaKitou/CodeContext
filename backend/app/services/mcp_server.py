@@ -6,7 +6,9 @@ Provides tools for the LLM agent to access live repository data
 """
 
 import logging
-from typing import Any
+from typing import Any, Optional
+
+from github import Github, GithubException
 
 logger = logging.getLogger(__name__)
 
@@ -35,141 +37,151 @@ class MCPGithubServer:
         self.repo_owner = repo_owner
         self.repo_name = repo_name
 
-        # TODO: Initialize PyGithub client
-        # from github import Github
-        # self.client = Github(github_token)
-        # self.repo = self.client.get_repo(f"{repo_owner}/{repo_name}")
+        try:
+            # Initialize PyGithub client
+            self.client = Github(github_token)
+            self.repo = self.client.get_repo(f"{repo_owner}/{repo_name}")
+            logger.info(f"Initialized GitHub client for {repo_owner}/{repo_name}")
+        except GithubException as e:
+            logger.error(f"Failed to initialize GitHub client: {str(e)}")
+            self.client = None
+            self.repo = None
 
     async def get_file_blame(
-        self, file_path: str, line_number: int | None = None
+        self, file_path: str, line_number: Optional[int] = None
     ) -> dict[str, Any]:
-        """
-        Get git blame information for a file.
-
-        Returns who last modified each line.
-
-        Args:
-            file_path: Path to the file in the repository
-            line_number: Optional specific line number
-
-        Returns:
-            Blame information with author, date, commit
-        """
+        """Get git blame information for a file."""
         logger.info(f"Getting blame for {file_path}")
 
+        if not self.repo:
+            return {"error": "GitHub client not initialized"}
+
         try:
-            # TODO: Implement using PyGithub:
-            # 1. Get file object from repository
-            # 2. Get commits for the file
-            # 3. Parse blame information
-            # 4. If line_number specified, return blame for that line
-            # 5. Otherwise return blame for all lines
+            commits = list(self.repo.get_commits(path=file_path, per_page=1))
+            if not commits:
+                return {"error": f"No commits found for {file_path}"}
 
-            return {"status": "not_implemented"}
+            commit = commits[0]
+            blame_info = {
+                "file": file_path,
+                "last_author": commit.commit.author.name if commit.commit.author else "Unknown",
+                "last_email": commit.commit.author.email if commit.commit.author else "unknown@example.com",
+                "last_commit": commit.sha[:7],
+                "last_message": commit.commit.message.split("\n")[0],
+                "last_date": commit.commit.author.date.isoformat() if commit.commit.author else None,
+            }
+            if line_number:
+                blame_info["line_number"] = line_number
+            return blame_info
 
-        except Exception as e:
+        except GithubException as e:
             logger.error(f"Blame lookup failed: {str(e)}")
-            return {"error": str(e)}
+            return {"error": f"Failed to get blame: {str(e)}"}
 
     async def get_issue(self, issue_number: int) -> dict[str, Any]:
-        """
-        Fetch GitHub issue details.
-
-        Args:
-            issue_number: Issue number
-
-        Returns:
-            Issue data (title, body, labels, state, author, created_at)
-        """
+        """Fetch GitHub issue details."""
         logger.info(f"Getting issue #{issue_number}")
 
+        if not self.repo:
+            return {"error": "GitHub client not initialized"}
+
         try:
-            # TODO: Implement using PyGithub:
-            # 1. Fetch issue by number
-            # 2. Extract title, body, labels, state, author, created_at, updated_at
-            # 3. Return as dictionary
+            issue = self.repo.get_issue(issue_number)
+            return {
+                "number": issue.number,
+                "title": issue.title,
+                "body": issue.body[:500] if issue.body else None,
+                "state": issue.state,
+                "author": issue.user.login,
+                "created_at": issue.created_at.isoformat(),
+                "updated_at": issue.updated_at.isoformat(),
+                "labels": [label.name for label in issue.labels],
+                "comments": issue.comments,
+                "url": issue.html_url,
+            }
 
-            return {"status": "not_implemented"}
-
-        except Exception as e:
+        except GithubException as e:
             logger.error(f"Issue lookup failed: {str(e)}")
-            return {"error": str(e)}
+            return {"error": f"Failed to get issue: {str(e)}"}
 
     async def get_pull_requests(
         self,
         state: str = "open",
-        keyword: str | None = None,
+        keyword: Optional[str] = None,
         limit: int = 10,
     ) -> list[dict[str, Any]]:
-        """
-        Search for pull requests.
-
-        Args:
-            state: PR state ("open", "closed", "all")
-            keyword: Optional search keyword
-            limit: Maximum number of results
-
-        Returns:
-            List of PR data (title, number, author, state, created_at)
-        """
+        """Search for pull requests."""
         logger.info(f"Getting pull requests (state={state}, keyword={keyword})")
 
+        if not self.repo:
+            return [{"error": "GitHub client not initialized"}]
+
         try:
-            # TODO: Implement using PyGithub:
-            # 1. Query PRs filtered by state
-            # 2. If keyword provided, filter by title/body match
-            # 3. Extract title, number, author, state, created_at, updated_at
-            # 4. Return list of PR dictionaries, limited to `limit`
+            github_state = "all" if state == "all" else state
+            prs = self.repo.get_pulls(state=github_state, sort="updated", direction="desc")
 
-            return []
+            results = []
+            count = 0
 
-        except Exception as e:
+            for pr in prs:
+                if keyword:
+                    if keyword.lower() not in pr.title.lower() and keyword.lower() not in (pr.body or "").lower():
+                        continue
+
+                results.append({
+                    "number": pr.number,
+                    "title": pr.title,
+                    "state": pr.state,
+                    "author": pr.user.login,
+                    "created_at": pr.created_at.isoformat(),
+                    "updated_at": pr.updated_at.isoformat(),
+                    "merged": pr.merged,
+                    "url": pr.html_url,
+                })
+
+                count += 1
+                if count >= limit:
+                    break
+
+            return results
+
+        except GithubException as e:
             logger.error(f"PR search failed: {str(e)}")
-            return []
+            return [{"error": f"Failed to get PRs: {str(e)}"}]
 
     async def get_commit_history(
         self,
         file_path: str,
         limit: int = 10,
     ) -> list[dict[str, Any]]:
-        """
-        Get commit history for a file.
-
-        Args:
-            file_path: Path to the file
-            limit: Maximum number of commits
-
-        Returns:
-            List of commits (sha, author, message, date)
-        """
+        """Get commit history for a file."""
         logger.info(f"Getting commit history for {file_path}")
 
+        if not self.repo:
+            return [{"error": "GitHub client not initialized"}]
+
         try:
-            # TODO: Implement using PyGithub:
-            # 1. Get file object from repository
-            # 2. Query commits for that file
-            # 3. Extract sha, author, message, date
-            # 4. Return list limited to `limit`
+            commits = self.repo.get_commits(path=file_path, per_page=limit)
 
-            return []
+            results = []
+            for commit in commits:
+                results.append({
+                    "sha": commit.sha[:7],
+                    "author": commit.commit.author.name if commit.commit.author else "Unknown",
+                    "email": commit.commit.author.email if commit.commit.author else None,
+                    "message": commit.commit.message.split("\n")[0],
+                    "date": commit.commit.author.date.isoformat() if commit.commit.author else None,
+                    "url": commit.html_url,
+                })
 
-        except Exception as e:
+            return results
+
+        except GithubException as e:
             logger.error(f"Commit history failed: {str(e)}")
-            return []
+            return [{"error": f"Failed to get commit history: {str(e)}"}]
 
     async def execute_tool(self, tool_name: str, **kwargs) -> dict[str, Any]:
-        """
-        Execute a tool by name with given arguments.
-
-        Used by the LLM agent to call MCP tools.
-
-        Args:
-            tool_name: Name of the tool
-            **kwargs: Tool arguments
-
-        Returns:
-            Tool result
-        """
+        """Execute a tool by name with given arguments."""
         if tool_name == "get_file_blame":
             return await self.get_file_blame(
                 file_path=kwargs.get("file_path"),
