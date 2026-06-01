@@ -1,0 +1,109 @@
+{
+  "query_001": {
+    "expected_answer": "The main function serves as the entry point of the application, initializing...",
+    "relevant_files": [
+      "main.py",
+      "app.py",
+      "core/config.py"
+    ],
+    "key_lines": {
+      "main.py": "1-50"
+    }
+  },
+  "query_002": {
+    "expected_answer": "Authentication is implemented using JWT tokens with FastAPI dependencies...",
+    "relevant_files": [
+      "core/security.py",
+      "api/deps.py",
+      "models/user.py"
+    ],
+    "key_lines": {
+      "core/security.py": "1-100",
+      "api/deps.py": "50-100"
+    }
+  },
+  "query_003": {
+    "expected_answer": "The API provides endpoints for users, items, and authentication under /api/v1/...",
+    "relevant_files": [
+      "api/routes/users.py",
+      "api/routes/items.py",
+      "api/routes/auth.py",
+      "main.py"
+    ],
+    "key_lines": {
+      "api/routes/auth.py": "1-50",
+      "main.py": "10-20"
+    }
+  },
+  "query_004": {
+    "expected_answer": "The database uses SQLModel with relationships between users and items...",
+    "relevant_files": [
+      "models/models.py",
+      "core/db.py"
+    ],
+    "key_lines": {
+      "models/models.py": "1-150"
+    }
+  },
+  "query_005": {
+    "expected_answer": "The payment processor was last modified by John Doe in commit abc123...",
+    "relevant_files": [
+      "services/payment.py"
+    ],
+    "key_lines": {
+      "services/payment.py": "1-200"
+    },
+    "requires_mcp": true
+  },
+  "query_006": {
+    "expected_answer": "The codebase uses custom exception classes and FastAPI exception handlers...",
+    "relevant_files": [
+      "core/exceptions.py",
+      "main.py"
+    ],
+    "key_lines": {
+      "core/exceptions.py": "1-50",
+      "main.py": "30-50"
+    }
+  },
+  "query_007": {
+    "expected_answer": "Caching is implemented using Redis for frequently accessed data...",
+    "relevant_files": [
+      "core/cache.py",
+      "api/routes/items.py"
+    ],
+    "key_lines": {
+      "core/cache.py": "1-100"
+    }
+  },
+  "query_008": {
+    "expected_answer": "Key dependencies include FastAPI for web framework, SQLModel for ORM...",
+    "relevant_files": [
+      "pyproject.toml"
+    ],
+    "key_lines": {
+      "pyproject.toml": "1-50"
+    }
+  },
+  "query_009": {
+    "expected_answer": "Concurrent requests are handled by FastAPI's async/await pattern...",
+    "relevant_files": [
+      "api/routes/items.py",
+      "main.py"
+    ],
+    "key_lines": {
+      "api/routes/items.py": "1-100"
+    }
+  },
+  "query_010": {
+    "expected_answer": "Tests are located in tests/ directory with pytest fixtures...",
+    "relevant_files": [
+      "tests/test_users.py",
+      "tests/test_items.py",
+      "tests/conftest.py"
+    ],
+    "key_lines": {
+      "tests/conftest.py": "1-50"
+    }
+  }
+}

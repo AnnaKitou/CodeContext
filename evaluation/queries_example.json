@@ -1,0 +1,62 @@
+[
+  {
+    "id": "query_001",
+    "question": "What does the main function do?",
+    "category": "function_behavior",
+    "complexity": "easy"
+  },
+  {
+    "id": "query_002",
+    "question": "How is authentication implemented in this codebase?",
+    "category": "architecture",
+    "complexity": "medium"
+  },
+  {
+    "id": "query_003",
+    "question": "What are the API endpoints and what do they do?",
+    "category": "api",
+    "complexity": "medium"
+  },
+  {
+    "id": "query_004",
+    "question": "Explain the database schema and relationships.",
+    "category": "database",
+    "complexity": "medium"
+  },
+  {
+    "id": "query_005",
+    "question": "Who last modified the payment processor and why?",
+    "category": "git_history",
+    "complexity": "hard"
+  },
+  {
+    "id": "query_006",
+    "question": "What error handling patterns are used?",
+    "category": "error_handling",
+    "complexity": "medium"
+  },
+  {
+    "id": "query_007",
+    "question": "How is caching implemented?",
+    "category": "performance",
+    "complexity": "medium"
+  },
+  {
+    "id": "query_008",
+    "question": "What are the key dependencies and why were they chosen?",
+    "category": "dependencies",
+    "complexity": "hard"
+  },
+  {
+    "id": "query_009",
+    "question": "How does the system handle concurrent requests?",
+    "category": "concurrency",
+    "complexity": "hard"
+  },
+  {
+    "id": "query_010",
+    "question": "What tests exist and what do they cover?",
+    "category": "testing",
+    "complexity": "medium"
+  }
+]
