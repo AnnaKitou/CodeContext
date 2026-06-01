@@ -24,9 +24,9 @@ class CodeContextChat:
     def __init__(self, api_base_url: str = API_BASE_URL):
         """Initialize the chat interface."""
         self.api_base_url = api_base_url
-        self.client = httpx.AsyncClient(timeout=30.0)
+        self.client = httpx.Client(timeout=30.0)
 
-    async def chat(
+    def chat(
         self,
         message: str,
         history: list,
@@ -50,7 +50,7 @@ class CodeContextChat:
 
         try:
             # Call the backend API
-            response = await self.client.post(
+            response = self.client.post(
                 f"{self.api_base_url}/query",
                 json={
                     "query": message,
@@ -81,9 +81,8 @@ class CodeContextChat:
                     file_ref = f"{citation['file']}:{citation['lines']}"
                     relevance = f"{citation['relevance']:.2%}"
                     output += f"{i}. [{file_ref}]({file_ref}) (relevance: {relevance})\n"
-
-            if citation.get("preview"):
-                output += f"\n**Preview:** {citation.get('preview')}\n"
+                    if citation.get("preview"):
+                        output += f"   Preview: {citation.get('preview')}\n"
 
             if mcp_calls:
                 output += f"\n**Live Data Used:** {', '.join(mcp_calls)}\n"
@@ -101,7 +100,7 @@ class CodeContextChat:
             logger.error(f"Chat error: {str(e)}")
             return f"Error: {str(e)}"
 
-    async def ingest_repository(self, repo_url: str, repo_name: str) -> str:
+    def ingest_repository(self, repo_url: str, repo_name: str) -> str:
         """
         Ingest a repository for indexing.
 
@@ -112,8 +111,11 @@ class CodeContextChat:
         Returns:
             Status message
         """
+        if not repo_url.strip() or not repo_name.strip():
+            return "❌ Please provide both repository URL and name"
+
         try:
-            response = await self.client.post(
+            response = self.client.post(
                 f"{self.api_base_url}/ingest",
                 json={
                     "repository_url": repo_url,
@@ -183,11 +185,11 @@ Ask questions about any indexed codebase and get answers with precise source cod
                         chat.chat,
                         additional_inputs=[top_k, use_mcp],
                         examples=[
-                            "What does the main function do?",
-                            "How is authentication implemented?",
-                            "What are the API endpoints?",
-                            "Explain the database schema.",
-                            "Who recently modified the payment processor?",
+                            ["What does the main function do?", 5, True],
+                            ["How is authentication implemented?", 5, True],
+                            ["What are the API endpoints?", 5, True],
+                            ["Explain the database schema.", 5, True],
+                            ["Who recently modified the payment processor?", 5, True],
                         ],
                     )
 

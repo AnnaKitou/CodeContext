@@ -1,3 +1,4 @@
+from pathlib import Path
 from pydantic_settings import BaseSettings
 
 
@@ -41,7 +42,7 @@ class Settings(BaseSettings):
     use_semantic_chunking: bool = True
 
     class Config:
-        env_file = ".env"
+        env_file = str(Path(__file__).resolve().parent.parent.parent.parent / ".env")
         case_sensitive = False
 
 

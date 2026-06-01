@@ -7,6 +7,8 @@ Encodes queries and retrieves relevant code chunks based on semantic similarity.
 import logging
 from dataclasses import dataclass
 
+import chromadb
+
 logger = logging.getLogger(__name__)
 
 
@@ -32,24 +34,35 @@ class RAGRetriever:
     matches with relevance scores.
     """
 
-    def __init__(self, chroma_client=None, top_k: int = 5):
+    def __init__(self, chroma_client=None, top_k: int = 5, db_path: str = "./chroma_db"):
         """
         Initialize the retriever.
 
         Args:
             chroma_client: ChromaDB client instance
             top_k: Default number of chunks to retrieve
+            db_path: Path to ChromaDB persistent storage
         """
-        self.chroma_client = chroma_client
         self.top_k = top_k
         self.collection = None
 
-        # TODO: Initialize ChromaDB collection
-        # if chroma_client:
-        #     self.collection = chroma_client.get_or_create_collection(
-        #         name="code_chunks",
-        #         metadata={"hnsw:space": "cosine"}
-        #     )
+        try:
+            # Initialize ChromaDB client if not provided
+            if chroma_client:
+                self.chroma_client = chroma_client
+            else:
+                self.chroma_client = chromadb.PersistentClient(path=db_path)
+
+            # Get or create collection
+            self.collection = self.chroma_client.get_or_create_collection(
+                name="code_chunks",
+                metadata={"hnsw:space": "cosine"},
+            )
+            logger.info("ChromaDB collection initialized successfully")
+
+        except Exception as e:
+            logger.warning(f"Failed to initialize ChromaDB: {str(e)}")
+            self.collection = None
 
     def retrieve(
         self, query: str, top_k: int | None = None, score_threshold: float = 0.0
@@ -71,46 +84,114 @@ class RAGRetriever:
         logger.info(f"Retrieving chunks for query: {query[:100]}...")
 
         try:
-            # TODO: Implement retrieval:
-            # 1. Embed query using Anthropic API
-            # 2. Query ChromaDB with embedding
-            # 3. Filter results by score_threshold
-            # 4. Map ChromaDB results to RetrievedChunk
-            # 5. Return sorted by relevance
+            if not self.collection:
+                logger.warning("No ChromaDB collection initialized, returning empty results")
+                return []
 
-            results = []
-            return results
+            # Query ChromaDB with the query text
+            # ChromaDB will use default embeddings if collection was initialized properly
+            results = self.collection.query(
+                query_texts=[query],
+                n_results=top_k,
+                where={"relevance": {"$gte": score_threshold}} if score_threshold > 0 else None,
+            )
+
+            chunks = []
+            if results and results.get("documents") and len(results["documents"]) > 0:
+                for i, doc in enumerate(results["documents"][0]):
+                    metadata = results["metadatas"][0][i] if results.get("metadatas") else {}
+                    distance = results["distances"][0][i] if results.get("distances") else 0
+
+                    # Convert distance to similarity score (1 - distance for cosine)
+                    relevance_score = max(0, 1 - distance)
+
+                    chunk = RetrievedChunk(
+                        file=metadata.get("file", "unknown"),
+                        language=metadata.get("language", "unknown"),
+                        start_line=int(metadata.get("start_line", 0)),
+                        end_line=int(metadata.get("end_line", 0)),
+                        content=doc,
+                        relevance_score=relevance_score,
+                        type=metadata.get("type"),
+                        name=metadata.get("name"),
+                    )
+                    chunks.append(chunk)
+
+            return chunks
 
         except Exception as e:
             logger.error(f"Retrieval failed: {str(e)}")
             return []
 
-    def add_chunks(self, chunks: list) -> None:
+    def add_chunks(self, chunks: list) -> int:
         """
         Add code chunks to the vector database.
 
         Args:
             chunks: List of CodeChunk objects
+
+        Returns:
+            Number of chunks added successfully
         """
+        if not self.collection:
+            logger.error("ChromaDB collection not initialized")
+            return 0
+
         logger.info(f"Adding {len(chunks)} chunks to ChromaDB...")
 
         try:
-            # TODO: Implement chunk addition:
-            # 1. Extract embeddings from chunks (or generate if missing)
-            # 2. Prepare ChromaDB documents:
-            #    - id: unique identifier
-            #    - document: code content
-            #    - embedding: vector
-            #    - metadata: {file, language, start_line, end_line, type, name}
-            # 3. Add to ChromaDB collection
+            added_count = 0
 
-            pass
+            for i, chunk in enumerate(chunks):
+                try:
+                    # Create unique ID for the chunk
+                    chunk_id = f"{chunk.file}#{chunk.start_line}#{chunk.end_line}"
+
+                    # Prepare metadata
+                    metadata = {
+                        "file": chunk.file,
+                        "language": chunk.language,
+                        "start_line": str(chunk.start_line),
+                        "end_line": str(chunk.end_line),
+                        "type": chunk.type or "unknown",
+                        "name": chunk.name or "unnamed",
+                    }
+
+                    # Add to collection
+                    # ChromaDB automatically generates embeddings using default embedder
+                    self.collection.add(
+                        ids=[chunk_id],
+                        documents=[chunk.content],
+                        metadatas=[metadata],
+                    )
+
+                    added_count += 1
+
+                    if (i + 1) % 100 == 0:
+                        logger.info(f"Added {i + 1}/{len(chunks)} chunks")
+
+                except Exception as e:
+                    logger.error(
+                        f"Failed to add chunk {chunk.file}:{chunk.start_line}: {str(e)}"
+                    )
+
+            logger.info(f"Successfully added {added_count}/{len(chunks)} chunks")
+            return added_count
 
         except Exception as e:
             logger.error(f"Failed to add chunks: {str(e)}")
+            return 0
 
     def clear(self) -> None:
         """Clear all chunks from the vector database."""
-        if self.collection:
-            # TODO: Delete ChromaDB collection and recreate
-            logger.info("Cleared all chunks from ChromaDB")
+        try:
+            if self.collection:
+                # Delete all documents in the collection
+                all_items = self.collection.get()
+                if all_items and all_items.get("ids"):
+                    self.collection.delete(ids=all_items["ids"])
+                    logger.info(f"Cleared {len(all_items['ids'])} chunks from ChromaDB")
+                else:
+                    logger.info("No chunks to clear from ChromaDB")
+        except Exception as e:
+            logger.error(f"Failed to clear ChromaDB: {str(e)}")
