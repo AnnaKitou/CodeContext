@@ -86,7 +86,7 @@ CodeContext/
 │   └── eval.py                     # Evaluation script
 ├── pyproject.toml
 ├── .env.example
-├── CLAUDE.md
+├── DEVELOPMENT.md
 └── README.md
 ```
 
@@ -157,7 +157,7 @@ See `scripts/eval.py` for evaluation framework.
 ## Deliverables
 
 - ✅ Full codebase (public GitHub repository)
-- ✅ Technical documentation (README, CLAUDE.md, architecture diagrams)
+- ✅ Technical documentation (README, DEVELOPMENT.md, architecture diagrams)
 - ✅ Evaluation dataset and reproducible scripts
 - ✅ Written report with results and analysis
 - ✅ Demo (Gradio UI)

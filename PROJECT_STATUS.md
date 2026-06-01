@@ -14,7 +14,7 @@ The foundation of CodeContext has been set up with proper architecture, file str
 
 - **Documentation**
   - README.md with full project overview
-  - CLAUDE.md with architecture and development guide
+  - DEVELOPMENT.md with architecture and development guide
   - CONTRIBUTING.md with contribution guidelines
   - API reference and examples
 
@@ -256,7 +256,7 @@ The foundation of CodeContext has been set up with proper architecture, file str
 
 ## Getting Help
 
-- **Questions**: Check CLAUDE.md for architecture details
+- **Questions**: Check DEVELOPMENT.md for architecture details
 - **Contributing**: See CONTRIBUTING.md
 - **Issues**: Create GitHub issues for bugs/features
 - **Contact**: a.kitou@codehub.gr

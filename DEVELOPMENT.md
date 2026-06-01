@@ -1,4 +1,4 @@
-# CLAUDE.md - CodeContext Development Guide
+# DEVELOPMENT.md - CodeContext Development Guide
 
 ## Project Overview
 
@@ -9,7 +9,7 @@
 - **MCP integration** (GitHub API for live data)
 - **Chat interface** (Gradio)
 
-This file guides Claude Code when working on this repository.
+Development guide for working with this repository.
 
 ---
 

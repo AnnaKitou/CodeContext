@@ -158,12 +158,12 @@ If you're working on research aspects:
 
 - Update README.md with new features
 - Add docstrings to new functions
-- Update CLAUDE.md with architecture changes
+- Update DEVELOPMENT.md with architecture changes
 - Document evaluation results
 
 ## Questions?
 
-- Check CLAUDE.md for architecture details
+- Check DEVELOPMENT.md for architecture details
 - Open an issue for questions/discussions
 - Email: a.kitou@codehub.gr
 

@@ -119,7 +119,7 @@ See [PROJECT_STATUS.md](PROJECT_STATUS.md) for detailed implementation roadmap.
 ## 📚 Documentation
 
 - **[README.md](README.md)** - Project overview
-- **[CLAUDE.md](CLAUDE.md)** - Architecture & development guide
+- **[DEVELOPMENT.md](DEVELOPMENT.md)** - Architecture & development guide
 - **[PROJECT_STATUS.md](PROJECT_STATUS.md)** - Implementation roadmap
 - **[CONTRIBUTING.md](CONTRIBUTING.md)** - How to contribute
 
@@ -163,7 +163,7 @@ Error: ANTHROPIC_API_KEY not set
 
 ## 📞 Need Help?
 
-- Check [CLAUDE.md](CLAUDE.md) for architecture questions
+- Check [DEVELOPMENT.md](DEVELOPMENT.md) for architecture questions
 - See [CONTRIBUTING.md](CONTRIBUTING.md) for development help
 - Open a GitHub issue for bugs
 - Email: a.kitou@codehub.gr
