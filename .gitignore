@@ -42,10 +42,12 @@ htmlcov/
 .mypy_cache/
 .ruff_cache/
 
-# Environment
+# Environment (IMPORTANT: Never commit secrets!)
 .env
 .env.local
 .env.*.local
+.env.prod
+.env.test
 
 # Database
 chroma_db/
@@ -73,3 +75,10 @@ cloned_repo/
 # OS
 .DS_Store
 Thumbs.db
+
+# Secrets and credentials
+*.pem
+*.key
+*.cert
+secrets/
+credentials.json
