@@ -103,7 +103,7 @@ def ingest(repo_url: str, repo_name: str) -> str:
 
 # ── UI ────────────────────────────────────────────────────────────────────────
 
-with gr.Blocks(title="CodeContext — Codebase Q&A", theme=gr.themes.Soft()) as demo:
+with gr.Blocks(title="CodeContext — Codebase Q&A") as demo:
 
     gr.Markdown(
         """
@@ -145,8 +145,6 @@ with gr.Blocks(title="CodeContext — Codebase Q&A", theme=gr.themes.Soft()) as 
                     chatbot = gr.Chatbot(
                         label="CodeContext",
                         height=460,
-                        bubble_full_width=False,
-                        show_copy_button=True,
                     )
                     with gr.Row():
                         msg_box = gr.Textbox(
@@ -229,4 +227,9 @@ Made by **Anna Kitou** · a.kitou@codehub.gr
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
-    demo.launch(server_name="0.0.0.0", server_port=7860, show_error=True)
+    demo.launch(
+        server_name="0.0.0.0",
+        server_port=7860,
+        show_error=True,
+        theme=gr.themes.Soft(),
+    )
