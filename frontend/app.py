@@ -69,7 +69,10 @@ def chat(message: str, history: list, top_k: int, use_mcp: bool):
         logger.error(f"Chat error: {e}")
         bot_reply = f"❌ Error: {e}"
 
-    history = history + [[message, bot_reply]]
+    history = history + [
+        {"role": "user", "content": message},
+        {"role": "assistant", "content": bot_reply},
+    ]
     return history, ""
 
 
@@ -145,6 +148,7 @@ with gr.Blocks(title="CodeContext — Codebase Q&A") as demo:
                     chatbot = gr.Chatbot(
                         label="CodeContext",
                         height=460,
+                        type="messages",
                     )
                     with gr.Row():
                         msg_box = gr.Textbox(
