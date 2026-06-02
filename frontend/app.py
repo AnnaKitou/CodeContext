@@ -1,280 +1,232 @@
 """
 Gradio-based chat interface for CodeContext.
 
-Provides a user-friendly way to ask questions about indexed codebases
-with interactive citation viewing and source code highlighting.
+Uses manual Chatbot + Textbox layout for full compatibility with gr.Blocks + Tabs.
 """
 
-import asyncio
 import httpx
 import logging
-from typing import AsyncGenerator
 
 import gradio as gr
 
 logger = logging.getLogger(__name__)
 
-# Backend API URL
 API_BASE_URL = "http://localhost:8000/api/v1"
+client = httpx.Client(timeout=60.0)
 
 
-class CodeContextChat:
-    """Gradio chat interface for CodeContext."""
+# ── Chat logic ────────────────────────────────────────────────────────────────
 
-    def __init__(self, api_base_url: str = API_BASE_URL):
-        """Initialize the chat interface."""
-        self.api_base_url = api_base_url
-        self.client = httpx.Client(timeout=30.0)
+def chat(message: str, history: list, top_k: int, use_mcp: bool):
+    """Send a message and return the updated history."""
+    if not message.strip():
+        return history, ""
 
-    def chat(
-        self,
-        message: str,
-        history: list,
-        top_k: int = 5,
-        use_mcp: bool = True,
-    ) -> str:
-        """
-        Process a user message and return the assistant response.
+    try:
+        resp = client.post(
+            f"{API_BASE_URL}/query",
+            json={
+                "query": message,
+                "top_k": int(top_k),
+                "use_mcp": use_mcp,
+                "include_code_preview": True,
+            },
+        )
 
-        Args:
-            message: User's question
-            history: Chat history (unused in this implementation)
-            top_k: Number of code chunks to retrieve
-            use_mcp: Whether to use MCP tools
-
-        Returns:
-            Formatted response with citations
-        """
-        if not message.strip():
-            return "Please ask a question."
-
-        try:
-            # Call the backend API
-            response = self.client.post(
-                f"{self.api_base_url}/query",
-                json={
-                    "query": message,
-                    "top_k": top_k,
-                    "use_mcp": use_mcp,
-                    "include_code_preview": True,
-                },
-            )
-
-            if response.status_code != 200:
-                error_detail = response.json().get("detail", "Unknown error")
-                return f"Error: {error_detail}"
-
-            data = response.json()
-
-            # Format response with citations
-            answer = data.get("answer", "No answer")
+        if resp.status_code != 200:
+            detail = resp.json().get("detail", "Unknown error")
+            bot_reply = f"❌ Error: {detail}"
+        else:
+            data = resp.json()
+            answer    = data.get("answer", "No answer")
             citations = data.get("citations", [])
             mcp_calls = data.get("mcp_calls", [])
             confidence = data.get("confidence", 0.0)
 
-            # Build formatted output
-            output = f"**Answer:** {answer}\n\n"
+            lines = [f"{answer}\n"]
 
             if citations:
-                output += "**Citations:**\n"
-                for i, citation in enumerate(citations, 1):
-                    file_ref = f"{citation['file']}:{citation['lines']}"
-                    relevance = f"{citation['relevance']:.2%}"
-                    output += f"{i}. [{file_ref}]({file_ref}) (relevance: {relevance})\n"
-                    if citation.get("preview"):
-                        output += f"   Preview: {citation.get('preview')}\n"
+                lines.append("**📍 Citations:**")
+                for i, c in enumerate(citations, 1):
+                    ref = f"`{c['file']}:{c['lines']}`"
+                    lines.append(f"{i}. {ref}  _(relevance: {c['relevance']:.0%})_")
+                    if c.get("preview"):
+                        lines.append(f"   > {c['preview'][:120]}…")
 
             if mcp_calls:
-                output += f"\n**Live Data Used:** {', '.join(mcp_calls)}\n"
+                lines.append(f"\n🔗 **Live data used:** {', '.join(mcp_calls)}")
 
-            output += f"\n**Confidence:** {confidence:.2%}"
+            lines.append(f"\n🎯 **Confidence:** {confidence:.0%}")
+            bot_reply = "\n".join(lines)
 
-            return output
-
-        except httpx.ConnectError:
-            return (
-                "❌ Cannot connect to backend. "
-                "Make sure FastAPI is running at http://localhost:8000"
-            )
-        except Exception as e:
-            logger.error(f"Chat error: {str(e)}")
-            return f"Error: {str(e)}"
-
-    def ingest_repository(self, repo_url: str, repo_name: str) -> str:
-        """
-        Ingest a repository for indexing.
-
-        Args:
-            repo_url: GitHub repository URL
-            repo_name: Repository name
-
-        Returns:
-            Status message
-        """
-        if not repo_url.strip() or not repo_name.strip():
-            return "❌ Please provide both repository URL and name"
-
-        try:
-            response = self.client.post(
-                f"{self.api_base_url}/ingest",
-                json={
-                    "repository_url": repo_url,
-                    "repository_name": repo_name,
-                },
-            )
-
-            if response.status_code != 200:
-                error_detail = response.json().get("detail", "Unknown error")
-                return f"❌ Ingestion failed: {error_detail}"
-
-            data = response.json()
-            return (
-                f"✅ {data['message']}\n"
-                f"Files indexed: {data['files_indexed']}\n"
-                f"Chunks created: {data['chunks_created']}\n"
-                f"Languages: {', '.join(data['languages'])}"
-            )
-
-        except httpx.ConnectError:
-            return (
-                "❌ Cannot connect to backend. "
-                "Make sure FastAPI is running at http://localhost:8000"
-            )
-        except Exception as e:
-            logger.error(f"Ingest error: {str(e)}")
-            return f"❌ Error: {str(e)}"
-
-
-def create_interface() -> gr.Blocks:
-    """Create the Gradio interface."""
-    chat = CodeContextChat()
-
-    with gr.Blocks(title="CodeContext - Codebase Q&A") as demo:
-        gr.Markdown(
-            """
-# 🔍 CodeContext
-**RAG/MCP System for Codebase Understanding**
-
-Ask questions about any indexed codebase and get answers with precise source code citations.
-            """
+    except httpx.ConnectError:
+        bot_reply = (
+            "❌ Cannot connect to backend.  \n"
+            "Make sure FastAPI is running:  \n"
+            "`cd backend && fastapi dev app/main.py`"
         )
+    except Exception as e:
+        logger.error(f"Chat error: {e}")
+        bot_reply = f"❌ Error: {e}"
 
-        with gr.Tabs():
-            # Chat Tab
-            with gr.Tab("💬 Chat"):
-                gr.Markdown("Ask questions about the indexed codebase.")
+    history = history + [[message, bot_reply]]
+    return history, ""
 
-                with gr.Row():
-                    with gr.Column():
-                        top_k = gr.Slider(
-                            minimum=1,
-                            maximum=20,
-                            value=5,
-                            step=1,
-                            label="Top-K Chunks",
-                            info="Number of code chunks to retrieve",
-                        )
-                        use_mcp = gr.Checkbox(
-                            value=True,
-                            label="Use MCP",
-                            info="Enable live GitHub data (blame, commits, issues)",
-                        )
 
-                with gr.Group():
-                    chatbot = gr.ChatInterface(
-                        chat.chat,
-                        additional_inputs=[top_k, use_mcp],
-                        examples=[
-                            ["What does the main function do?", 5, True],
-                            ["How is authentication implemented?", 5, True],
-                            ["What are the API endpoints?", 5, True],
-                            ["Explain the database schema.", 5, True],
-                            ["Who recently modified the payment processor?", 5, True],
-                        ],
+def ingest(repo_url: str, repo_name: str) -> str:
+    """Ingest a repository."""
+    if not repo_url.strip() or not repo_name.strip():
+        return "❌ Please provide both a repository URL and a name."
+
+    try:
+        resp = client.post(
+            f"{API_BASE_URL}/ingest",
+            json={"repository_url": repo_url, "repository_name": repo_name},
+        )
+        if resp.status_code != 200:
+            detail = resp.json().get("detail", "Unknown error")
+            return f"❌ Ingestion failed: {detail}"
+
+        data = resp.json()
+        langs = ", ".join(data.get("languages", [])) or "—"
+        return (
+            f"✅ {data['message']}\n"
+            f"• Files indexed : {data['files_indexed']}\n"
+            f"• Chunks created: {data['chunks_created']}\n"
+            f"• Languages     : {langs}"
+        )
+    except httpx.ConnectError:
+        return "❌ Cannot connect to backend at http://localhost:8000"
+    except Exception as e:
+        return f"❌ Error: {e}"
+
+
+# ── UI ────────────────────────────────────────────────────────────────────────
+
+with gr.Blocks(title="CodeContext — Codebase Q&A", theme=gr.themes.Soft()) as demo:
+
+    gr.Markdown(
+        """
+# 🔍 CodeContext
+**RAG/MCP System for Codebase Understanding** — ask questions, get answers with source citations.
+        """
+    )
+
+    with gr.Tabs():
+
+        # ── Chat tab ──────────────────────────────────────────────────────────
+        with gr.Tab("💬 Chat"):
+            with gr.Row():
+
+                # Left column: controls
+                with gr.Column(scale=1, min_width=220):
+                    gr.Markdown("### ⚙️ Settings")
+                    top_k_slider = gr.Slider(
+                        minimum=1, maximum=20, value=5, step=1,
+                        label="Top-K Chunks",
+                        info="Chunks retrieved per query",
+                    )
+                    use_mcp_cb = gr.Checkbox(
+                        value=True,
+                        label="Use MCP (GitHub)",
+                        info="Enable live blame / PR / commit data",
+                    )
+                    gr.Markdown(
+                        """
+**Tips**
+- Index a repo first (Ingest tab)
+- Ask about functions, files, authors
+- MCP needs `GITHUB_TOKEN` in `.env`
+                        """
                     )
 
-            # Ingest Tab
-            with gr.Tab("📥 Ingest Repository"):
-                gr.Markdown("Index a new repository for semantic search.")
+                # Right column: chatbot
+                with gr.Column(scale=4):
+                    chatbot = gr.Chatbot(
+                        label="CodeContext",
+                        height=460,
+                        bubble_full_width=False,
+                        show_copy_button=True,
+                    )
+                    with gr.Row():
+                        msg_box = gr.Textbox(
+                            placeholder="Ask something about the codebase…",
+                            label="",
+                            scale=5,
+                            lines=1,
+                            autofocus=True,
+                        )
+                        send_btn = gr.Button("Send ➤", variant="primary", scale=1)
+                    clear_btn = gr.Button("🗑 Clear chat", size="sm", variant="secondary")
 
-                with gr.Group():
-                    repo_url = gr.Textbox(
+            # Wire events
+            send_btn.click(
+                chat,
+                inputs=[msg_box, chatbot, top_k_slider, use_mcp_cb],
+                outputs=[chatbot, msg_box],
+            )
+            msg_box.submit(
+                chat,
+                inputs=[msg_box, chatbot, top_k_slider, use_mcp_cb],
+                outputs=[chatbot, msg_box],
+            )
+            clear_btn.click(lambda: ([], ""), outputs=[chatbot, msg_box])
+
+        # ── Ingest tab ────────────────────────────────────────────────────────
+        with gr.Tab("📥 Ingest Repository"):
+            gr.Markdown(
+                "Clone a GitHub repository and index it so you can ask questions about it."
+            )
+            with gr.Row():
+                with gr.Column():
+                    repo_url_box = gr.Textbox(
                         label="Repository URL",
-                        placeholder="https://github.com/user/repo",
-                        info="GitHub repository URL to index",
+                        placeholder="https://github.com/tiangolo/fastapi",
                     )
-                    repo_name = gr.Textbox(
-                        label="Repository Name",
-                        placeholder="my-project",
-                        info="Display name for the repository",
+                    repo_name_box = gr.Textbox(
+                        label="Display name",
+                        placeholder="fastapi",
                     )
-                    ingest_btn = gr.Button("🚀 Start Ingestion", variant="primary")
-                    ingest_output = gr.Textbox(
-                        label="Status",
-                        interactive=False,
-                        lines=5,
+                    ingest_btn = gr.Button("🚀 Index repository", variant="primary")
+                with gr.Column():
+                    ingest_out = gr.Textbox(
+                        label="Status", lines=6, interactive=False
                     )
 
-                    ingest_btn.click(
-                        chat.ingest_repository,
-                        inputs=[repo_url, repo_name],
-                        outputs=ingest_output,
-                    )
+            ingest_btn.click(
+                ingest,
+                inputs=[repo_url_box, repo_name_box],
+                outputs=ingest_out,
+            )
 
-            # About Tab
-            with gr.Tab("ℹ️ About"):
-                gr.Markdown(
-                    """
+        # ── About tab ─────────────────────────────────────────────────────────
+        with gr.Tab("ℹ️ About"):
+            gr.Markdown(
+                """
 ## About CodeContext
 
-**CodeContext** is a research project combining:
-- **RAG (Retrieval-Augmented Generation)**: Semantic code chunking with tree-sitter
-- **MCP (Model Context Protocol)**: Live GitHub API integration
-- **LLM Agent**: Claude API with function calling
+A research project combining **RAG** + **MCP** for intelligent codebase Q&A.
 
-### Features
-- 🔍 Semantic search across codebases
-- 📍 Precise source code citations (file/line)
-- 🔗 Live GitHub integration (blame, commits, PRs)
-- 💡 Context-aware answers
+| Layer | Technology |
+|-------|-----------|
+| Backend | FastAPI |
+| Vector DB | ChromaDB |
+| Code parsing | tree-sitter (AST) |
+| LLM | Anthropic API |
+| Live data | GitHub API via MCP |
+| Frontend | Gradio |
 
 ### Research Questions
-- Does AST-based chunking improve retrieval quality?
-- How do RAG and MCP patterns complement each other?
-- How reliable are the generated citations?
-
-### Stack
-- Backend: FastAPI, ChromaDB, tree-sitter
-- Frontend: Gradio
-- LLM: Claude API (Anthropic)
-- Code Analysis: tree-sitter AST parsing
-- MCP: GitHub API integration
-
-### Try It
-1. **Ingest** a repository (GitHub)
-2. **Ask** questions about the code
-3. **View** citations and source code
-4. **Explore** with live GitHub data
+1. Does AST-based chunking improve retrieval vs fixed-size?
+2. How do RAG and MCP complement each other?
+3. How reliable are the generated file/line citations?
 
 ---
-
-Made by [Anna Kitou](mailto:a.kitou@codehub.gr)
-                    """
-                )
-
-    return demo
+Made by **Anna Kitou** · a.kitou@codehub.gr
+            """
+            )
 
 
 if __name__ == "__main__":
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-    )
-
-    demo = create_interface()
-    demo.launch(
-        server_name="0.0.0.0",
-        server_port=7860,
-        show_error=True,
-        share=False,
-    )
+    logging.basicConfig(level=logging.INFO)
+    demo.launch(server_name="0.0.0.0", server_port=7860, show_error=True)
