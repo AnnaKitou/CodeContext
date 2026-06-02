@@ -148,7 +148,6 @@ with gr.Blocks(title="CodeContext — Codebase Q&A") as demo:
                     chatbot = gr.Chatbot(
                         label="CodeContext",
                         height=460,
-                        type="messages",
                     )
                     with gr.Row():
                         msg_box = gr.Textbox(
