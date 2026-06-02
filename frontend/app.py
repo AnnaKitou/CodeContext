@@ -76,15 +76,33 @@ def chat(message: str, history: list, top_k: int, use_mcp: bool):
     return history, ""
 
 
-def ingest(repo_url: str, repo_name: str) -> str:
-    """Ingest a repository."""
+def clear_index() -> str:
+    """Wipe all chunks from ChromaDB."""
+    try:
+        resp = client.delete(f"{API_BASE_URL}/ingest")
+        if resp.status_code != 200:
+            return f"❌ Failed to clear: {resp.json().get('detail', 'Unknown error')}"
+        data = resp.json()
+        return f"🗑 {data['message']}"
+    except httpx.ConnectError:
+        return "❌ Cannot connect to backend at http://localhost:8000"
+    except Exception as e:
+        return f"❌ Error: {e}"
+
+
+def ingest(repo_url: str, repo_name: str, clear_first: bool) -> str:
+    """Ingest a repository, optionally clearing the index first."""
     if not repo_url.strip() or not repo_name.strip():
         return "❌ Please provide both a repository URL and a name."
 
     try:
         resp = client.post(
             f"{API_BASE_URL}/ingest",
-            json={"repository_url": repo_url, "repository_name": repo_name},
+            json={
+                "repository_url": repo_url,
+                "repository_name": repo_name,
+                "clear_before_ingest": clear_first,
+            },
         )
         if resp.status_code != 200:
             detail = resp.json().get("detail", "Unknown error")
@@ -92,8 +110,9 @@ def ingest(repo_url: str, repo_name: str) -> str:
 
         data = resp.json()
         langs = ", ".join(data.get("languages", [])) or "—"
+        prefix = "🔄 Old index wiped. " if clear_first else ""
         return (
-            f"✅ {data['message']}\n"
+            f"{prefix}✅ {data['message']}\n"
             f"• Files indexed : {data['files_indexed']}\n"
             f"• Chunks created: {data['chunks_created']}\n"
             f"• Languages     : {langs}"
@@ -188,15 +207,26 @@ with gr.Blocks(title="CodeContext — Codebase Q&A") as demo:
                         label="Display name",
                         placeholder="fastapi",
                     )
-                    ingest_btn = gr.Button("🚀 Index repository", variant="primary")
+                    clear_first_cb = gr.Checkbox(
+                        value=False,
+                        label="🔄 Replace existing index (wipe old data first)",
+                        info="Turn this ON when indexing a new repo — otherwise old results will mix in.",
+                    )
+                    with gr.Row():
+                        ingest_btn = gr.Button("🚀 Index repository", variant="primary", scale=3)
+                        clear_idx_btn = gr.Button("🗑 Clear index", variant="secondary", scale=1)
                 with gr.Column():
                     ingest_out = gr.Textbox(
-                        label="Status", lines=6, interactive=False
+                        label="Status", lines=8, interactive=False
                     )
 
             ingest_btn.click(
                 ingest,
-                inputs=[repo_url_box, repo_name_box],
+                inputs=[repo_url_box, repo_name_box, clear_first_cb],
+                outputs=ingest_out,
+            )
+            clear_idx_btn.click(
+                clear_index,
                 outputs=ingest_out,
             )
 
