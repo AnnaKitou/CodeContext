@@ -10,7 +10,7 @@ from typing import Set
 from fastapi import APIRouter, HTTPException
 
 from app.core.config import settings
-from app.models.schemas import IngestRequest, IngestResponse
+from app.models.schemas import ClearIndexResponse, IngestRequest, IngestResponse
 from app.services.chunking import SemanticChunker, is_code_file
 from app.services.retriever import RAGRetriever
 
@@ -31,6 +31,29 @@ def get_ingest_retriever() -> RAGRetriever:
             db_path=settings.CHROMA_DB_PATH,
         )
     return _ingest_retriever
+
+
+@router.delete("/ingest", response_model=ClearIndexResponse, tags=["ingest"])
+async def clear_index() -> ClearIndexResponse:
+    """
+    Wipe all indexed chunks from ChromaDB.
+
+    Call this before indexing a new repository when you want a clean slate.
+    """
+    retriever = get_ingest_retriever()
+    try:
+        if retriever.collection:
+            all_items = retriever.collection.get()
+            count = len(all_items.get("ids", []))
+            retriever.clear()
+            logger.info(f"Index cleared: {count} chunks removed")
+            return ClearIndexResponse(
+                message=f"Index cleared — {count} chunks removed.", chunks_removed=count
+            )
+        return ClearIndexResponse(message="Index was already empty.", chunks_removed=0)
+    except Exception as e:
+        logger.error(f"Failed to clear index: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Failed to clear index: {e}")
 
 
 @router.post("/ingest", response_model=IngestResponse)
@@ -70,13 +93,18 @@ async def ingest_codebase(request: IngestRequest) -> IngestResponse:
                 languages=[],
             )
 
+        # 2b. Optionally clear the existing index first
+        retriever = get_ingest_retriever()
+        if request.clear_before_ingest:
+            retriever.clear()
+            logger.info("Index cleared before ingestion (clear_before_ingest=True)")
+
         # 3. Chunk code files
         chunker = SemanticChunker()
         all_chunks = chunker.chunk_repository(repo_path, code_files)
         logger.info(f"Created {len(all_chunks)} semantic chunks")
 
         # 4. Store chunks in ChromaDB
-        retriever = get_ingest_retriever()
         chunks_added = retriever.add_chunks(all_chunks)
 
         # Get languages used

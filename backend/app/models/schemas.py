@@ -8,6 +8,16 @@ class IngestRequest(BaseModel):
 
     repository_url: str = Field(..., description="GitHub repository URL")
     repository_name: str = Field(..., description="Name of the repository")
+    clear_before_ingest: bool = Field(
+        False, description="Wipe the existing index before indexing this repo"
+    )
+
+
+class ClearIndexResponse(BaseModel):
+    """Response after clearing the index."""
+
+    message: str
+    chunks_removed: int
 
 
 class IngestResponse(BaseModel):

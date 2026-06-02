@@ -1025,6 +1025,20 @@
           <p class="section-sub">Clone a GitHub repo and build a semantic index so you can query it with natural language.</p>
         </div>
 
+        <!-- Clear index warning banner -->
+        <div id="clear-banner" style="
+            display:none; align-items:center; gap:12px;
+            background:rgba(224,64,251,.10); border:1px solid rgba(224,64,251,.35);
+            border-radius:14px; padding:14px 18px; margin-bottom:4px;">
+          <span style="font-size:1.1rem">⚠️</span>
+          <div style="flex:1">
+            <span style="font-size:.85rem; color:#f0ecff; font-weight:600;">Replace existing index?</span><br>
+            <span style="font-size:.78rem; color:var(--text-mid);">
+              This will permanently delete all currently indexed chunks before loading the new repo.
+            </span>
+          </div>
+        </div>
+
         <div class="ingest-card">
           <div class="ingest-col">
             <div class="field">
@@ -1035,9 +1049,23 @@
               <label>Display Name</label>
               <input class="text-input" id="repo-name" type="text" placeholder="fastapi" />
             </div>
-            <button class="btn btn-primary" id="ingest-btn" style="align-self:flex-start;margin-top:4px">
-              🚀 Index Repository
-            </button>
+
+            <!-- Replace toggle -->
+            <label style="display:flex;align-items:center;gap:10px;cursor:pointer;margin-top:4px">
+              <label class="toggle" style="flex-shrink:0">
+                <input type="checkbox" id="clear-first-cb" />
+                <span class="toggle-track"></span>
+              </label>
+              <div>
+                <span style="font-size:.84rem;font-weight:600;color:var(--text-mid)">Replace existing index</span><br>
+                <span style="font-size:.74rem;color:var(--text-lo)">Wipe old data before indexing this repo</span>
+              </div>
+            </label>
+
+            <div style="display:flex;gap:10px;margin-top:4px;flex-wrap:wrap">
+              <button class="btn btn-primary" id="ingest-btn">🚀 Index Repository</button>
+              <button class="btn btn-secondary" id="clear-only-btn" title="Delete all indexed chunks now">🗑 Clear Index</button>
+            </div>
           </div>
           <div class="ingest-col">
             <div class="field" style="flex:1">
@@ -1258,29 +1286,63 @@
       document.getElementById('messages').innerHTML = '';
     });
 
-    /* ── Ingest ──────────────────────────────────────────────────── */
+    /* ── Ingest — show/hide warning banner when toggle changes ── */
+    document.getElementById('clear-first-cb').addEventListener('change', function () {
+      document.getElementById('clear-banner').style.display = this.checked ? 'flex' : 'none';
+    });
+
+    /* ── Ingest — standalone Clear Index button ── */
+    document.getElementById('clear-only-btn').addEventListener('click', async () => {
+      const out = document.getElementById('ingest-status');
+      const btn = document.getElementById('clear-only-btn');
+      if (!confirm('Delete ALL indexed chunks from ChromaDB? This cannot be undone.')) return;
+      btn.disabled = true; btn.textContent = '⏳ Clearing…';
+      out.textContent = 'Clearing index…';
+      setStatus('Clearing…', true);
+      try {
+        const r = await fetch(`${API}/ingest`, { method: 'DELETE' });
+        const d = await r.json();
+        out.textContent = r.ok ? `✅ ${d.message}` : `❌ ${d.detail || r.statusText}`;
+      } catch {
+        out.textContent = '❌ Cannot connect to backend at http://localhost:8000';
+      }
+      btn.disabled = false; btn.textContent = '🗑 Clear Index'; setStatus('Ready');
+    });
+
+    /* ── Ingest — index a repository ── */
     document.getElementById('ingest-btn').addEventListener('click', async () => {
-      const url  = document.getElementById('repo-url').value.trim();
-      const name = document.getElementById('repo-name').value.trim();
-      const out  = document.getElementById('ingest-status');
-      const btn  = document.getElementById('ingest-btn');
+      const url        = document.getElementById('repo-url').value.trim();
+      const name       = document.getElementById('repo-name').value.trim();
+      const clearFirst = document.getElementById('clear-first-cb').checked;
+      const out        = document.getElementById('ingest-status');
+      const btn        = document.getElementById('ingest-btn');
       if (!url || !name) { out.textContent = '❌ Please provide both URL and name.'; return; }
       btn.disabled = true; btn.textContent = '⏳ Indexing…';
-      out.textContent = 'Cloning and indexing repository…\nThis may take a minute.';
+      out.textContent = clearFirst
+        ? 'Clearing old index, then cloning and indexing…\nThis may take a minute.'
+        : 'Cloning and indexing repository…\nThis may take a minute.';
       setStatus('Indexing…', true);
 
       try {
         const r = await fetch(`${API}/ingest`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ repository_url: url, repository_name: name }),
+          body: JSON.stringify({
+            repository_url: url,
+            repository_name: name,
+            clear_before_ingest: clearFirst,
+          }),
         });
         const d = await r.json();
         if (!r.ok) {
           out.textContent = `❌ ${d.detail || r.statusText}`;
         } else {
           const langs = (d.languages||[]).join(', ') || '—';
-          out.textContent = `✅ ${d.message}\n• Files   : ${d.files_indexed}\n• Chunks  : ${d.chunks_created}\n• Languages: ${langs}`;
+          out.textContent =
+            `✅ ${d.message}\n` +
+            `• Files    : ${d.files_indexed}\n` +
+            `• Chunks   : ${d.chunks_created}\n` +
+            `• Languages: ${langs}`;
         }
       } catch {
         out.textContent = '❌ Cannot connect to backend at http://localhost:8000';
