@@ -1,9 +1,12 @@
 import logging
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
 from fastapi.routing import APIRoute
+from fastapi.staticfiles import StaticFiles
 
 from app.api.routes import ingest, query
 from app.core.config import settings
@@ -68,27 +71,31 @@ if settings.all_cors_origins:
         allow_headers=["*"],
     )
 
-# Routers
+# Routers — must be registered BEFORE the catch-all static mount
 app.include_router(ingest.router, prefix=settings.API_V1_STR, tags=["ingest"])
 app.include_router(query.router,  prefix=settings.API_V1_STR, tags=["query"])
 
 
+# ── Frontend ──────────────────────────────────────────────────────────────────
+
+_FRONTEND = Path(__file__).resolve().parent.parent.parent / "frontend"
+
+# Serve any static sub-assets (images, extra JS/CSS) if the folder exists
+_STATIC = _FRONTEND / "static"
+if _STATIC.is_dir():
+    app.mount("/static", StaticFiles(directory=str(_STATIC)), name="static")
+
+
 # ── Endpoints ─────────────────────────────────────────────────────────────────
 
-@app.get("/")
-async def root() -> dict:
-    return {
-        "name": settings.PROJECT_NAME,
-        "version": settings.VERSION,
-        "docs": f"{settings.API_V1_STR}/docs",
-        "environment": settings.ENVIRONMENT,
-    }
+@app.get("/", include_in_schema=False)
+async def serve_frontend() -> FileResponse:
+    """Serve the main web UI at the root URL."""
+    return FileResponse(str(_FRONTEND / "index.html"), media_type="text/html")
 
 
 @app.get("/health", response_model=HealthResponse)
 async def health_check() -> HealthResponse:
-    from pathlib import Path
-
     db_ok = Path(settings.CHROMA_DB_PATH).exists() if settings.CHROMA_PERSIST else True
     return HealthResponse(status="ok", db_connected=db_ok)
 
