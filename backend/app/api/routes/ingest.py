@@ -27,8 +27,8 @@ def get_ingest_retriever() -> RAGRetriever:
     global _ingest_retriever
     if _ingest_retriever is None:
         _ingest_retriever = RAGRetriever(
-            top_k=settings.retriever_top_k,
-            db_path=settings.chroma_db_path,
+            top_k=settings.RETRIEVER_TOP_K,
+            db_path=settings.CHROMA_DB_PATH,
         )
     return _ingest_retriever
 

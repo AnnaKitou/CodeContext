@@ -24,7 +24,7 @@ def get_anthropic_client():
     """Get or create Anthropic client."""
     global _anthropic_client
     if _anthropic_client is None:
-        _anthropic_client = Anthropic(api_key=settings.anthropic_api_key)
+        _anthropic_client = Anthropic(api_key=settings.ANTHROPIC_API_KEY)
     return _anthropic_client
 
 
@@ -33,8 +33,8 @@ def get_retriever():
     global _retriever
     if _retriever is None:
         _retriever = RAGRetriever(
-            top_k=settings.retriever_top_k,
-            db_path=settings.chroma_db_path,
+            top_k=settings.RETRIEVER_TOP_K,
+            db_path=settings.CHROMA_DB_PATH,
         )
     return _retriever
 
@@ -79,7 +79,7 @@ async def query_codebase(
         retrieved_chunks = retriever.retrieve(
             query=request.query,
             top_k=request.top_k,
-            score_threshold=settings.retriever_score_threshold,
+            score_threshold=settings.RETRIEVER_SCORE_THRESHOLD,
         )
 
         logger.info(f"Retrieved {len(retrieved_chunks)} chunks")

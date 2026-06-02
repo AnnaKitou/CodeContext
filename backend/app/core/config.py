@@ -1,50 +1,104 @@
+import warnings
 from pathlib import Path
+from typing import Annotated, Any, Literal
+
+from pydantic import AnyUrl, BeforeValidator, computed_field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+from typing_extensions import Self
+
+
+def parse_cors(v: Any) -> list[str] | str:
+    """Accept CORS origins as a comma-separated string or a list."""
+    if isinstance(v, str) and not v.startswith("["):
+        return [i.strip() for i in v.split(",")]
+    elif isinstance(v, list | str):
+        return v
+    raise ValueError(v)
 
 
 class Settings(BaseSettings):
-    """Application settings loaded from environment variables."""
+    """Application settings — loaded from .env, then environment variables."""
 
     model_config = SettingsConfigDict(
         env_file=str(Path(__file__).resolve().parent.parent.parent.parent / ".env"),
-        case_sensitive=False
+        env_ignore_empty=True,
+        case_sensitive=False,
+        extra="ignore",
     )
 
-    # Anthropic API
-    anthropic_api_key: str
-    anthropic_model: str = "claude-opus-4-8"
-    anthropic_embedding_model: str = "text-embedding-3-small"
+    # ── Project ───────────────────────────────────────────────────────────────
+    PROJECT_NAME: str = "CodeContext"
+    API_V1_STR: str = "/api/v1"
+    VERSION: str = "0.1.0"
+    ENVIRONMENT: Literal["local", "staging", "production"] = "local"
 
-    # GitHub (for MCP)
-    github_token: str | None = None
-    github_repo_url: str | None = None
-    github_repo_owner: str | None = None
-    github_repo_name: str | None = None
+    # ── Sentry (optional) ─────────────────────────────────────────────────────
+    SENTRY_DSN: str | None = None
 
-    # FastAPI
-    debug: bool = False
-    log_level: str = "INFO"
-    host: str = "0.0.0.0"
-    port: int = 8000
+    # ── CORS ──────────────────────────────────────────────────────────────────
+    # Accepts a comma-separated string or a JSON array.
+    # Example:  BACKEND_CORS_ORIGINS="http://localhost:7860,http://localhost:3000"
+    BACKEND_CORS_ORIGINS: Annotated[list[AnyUrl] | str, BeforeValidator(parse_cors)] = []
+    FRONTEND_HOST: str = "http://localhost:7860"
 
-    # ChromaDB
-    chroma_db_path: str = "./chroma_db"
-    chroma_persist: bool = True
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def all_cors_origins(self) -> list[str]:
+        """Return CORS origins including the frontend host."""
+        origins = [str(o).rstrip("/") for o in self.BACKEND_CORS_ORIGINS]
+        if self.FRONTEND_HOST not in origins:
+            origins = [self.FRONTEND_HOST] + origins
+        return origins
 
-    # RAG Configuration
-    retriever_top_k: int = 5
-    retriever_score_threshold: float = 0.3
-    chunk_overlap: int = 100
-    min_chunk_size: int = 200
-    max_chunk_size: int = 1000
+    # ── FastAPI ───────────────────────────────────────────────────────────────
+    DEBUG: bool = False
+    LOG_LEVEL: str = "INFO"
+    HOST: str = "0.0.0.0"
+    PORT: int = 8000
 
-    # Evaluation
-    eval_dataset_path: str = "./evaluation/queries.json"
-    eval_ground_truth_path: str = "./evaluation/ground_truth.json"
+    # ── Anthropic ─────────────────────────────────────────────────────────────
+    ANTHROPIC_API_KEY: str = "changethis"
+    ANTHROPIC_MODEL: str = "claude-opus-4-5"
+    ANTHROPIC_EMBEDDING_MODEL: str = "text-embedding-3-small"
 
-    # Features
-    use_mcp: bool = True
-    use_semantic_chunking: bool = True
+    # ── GitHub / MCP ─────────────────────────────────────────────────────────
+    GITHUB_TOKEN: str | None = None
+    GITHUB_REPO_URL: str | None = None
+    GITHUB_REPO_OWNER: str | None = None
+    GITHUB_REPO_NAME: str | None = None
+
+    # ── ChromaDB ─────────────────────────────────────────────────────────────
+    CHROMA_DB_PATH: str = "./chroma_db"
+    CHROMA_PERSIST: bool = True
+
+    # ── RAG ───────────────────────────────────────────────────────────────────
+    RETRIEVER_TOP_K: int = 5
+    RETRIEVER_SCORE_THRESHOLD: float = 0.3
+    CHUNK_OVERLAP: int = 100
+    MIN_CHUNK_SIZE: int = 200
+    MAX_CHUNK_SIZE: int = 1000
+
+    # ── Features ──────────────────────────────────────────────────────────────
+    USE_MCP: bool = True
+    USE_SEMANTIC_CHUNKING: bool = True
+
+    # ── Evaluation ────────────────────────────────────────────────────────────
+    EVAL_DATASET_PATH: str = "./evaluation/queries.json"
+    EVAL_GROUND_TRUTH_PATH: str = "./evaluation/ground_truth.json"
+
+    # ── Secret validation (mirrors template) ─────────────────────────────────
+    @model_validator(mode="after")
+    def _enforce_non_default_secrets(self) -> Self:
+        if self.ANTHROPIC_API_KEY == "changethis":
+            message = (
+                'ANTHROPIC_API_KEY is set to "changethis" — '
+                "please set a real key in your .env file."
+            )
+            if self.ENVIRONMENT == "local":
+                warnings.warn(message, stacklevel=1)
+            else:
+                raise ValueError(message)
+        return self
 
 
 settings = Settings()
