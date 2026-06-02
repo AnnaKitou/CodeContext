@@ -10,7 +10,7 @@ readme = "README.md"
 requires-python = ">=3.11"
 license = {text = "MIT"}
 authors = [
-    {name = "Anna Kitou", email = "a.kitou@codehub.gr"}
+    {name = "Anna Kitou", email = "kitouanna@gmail.com"}
 ]
 keywords = ["rag", "mcp", "codebase", "ai", "llm", "embeddings"]
 

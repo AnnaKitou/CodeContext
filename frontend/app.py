@@ -223,7 +223,7 @@ A research project combining **RAG** + **MCP** for intelligent codebase Q&A.
 3. How reliable are the generated file/line citations?
 
 ---
-Made by **Anna Kitou** · a.kitou@codehub.gr
+Made by **Anna Kitou** · kitouanna@gmail.com
             """
             )
 

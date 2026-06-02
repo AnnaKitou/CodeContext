@@ -259,7 +259,7 @@ The foundation of CodeContext has been set up with proper architecture, file str
 - **Questions**: Check DEVELOPMENT.md for architecture details
 - **Contributing**: See CONTRIBUTING.md
 - **Issues**: Create GitHub issues for bugs/features
-- **Contact**: a.kitou@codehub.gr
+- **Contact**: kitouanna@gmail.com
 
 ---
 

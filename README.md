@@ -168,4 +168,4 @@ MIT
 
 ## Author
 
-Anna Kitou (a.kitou@codehub.gr)
+Anna Kitou (kitouanna@gmail.com)

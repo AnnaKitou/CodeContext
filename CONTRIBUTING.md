@@ -165,7 +165,7 @@ If you're working on research aspects:
 
 - Check DEVELOPMENT.md for architecture details
 - Open an issue for questions/discussions
-- Email: a.kitou@codehub.gr
+- Email: kitouanna@gmail.com
 
 ## License
 

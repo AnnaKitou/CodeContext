@@ -166,7 +166,7 @@ Error: ANTHROPIC_API_KEY not set
 - Check [DEVELOPMENT.md](DEVELOPMENT.md) for architecture questions
 - See [CONTRIBUTING.md](CONTRIBUTING.md) for development help
 - Open a GitHub issue for bugs
-- Email: a.kitou@codehub.gr
+- Email: kitouanna@gmail.com
 
 ## 📈 Next Features to Build
 
