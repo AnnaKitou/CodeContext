@@ -1,3 +1,15 @@
+<!-- Hugging Face Spaces configuration (required at the top of the Space's README). -->
+<!-- Harmless on GitHub; remove this block if you don't deploy to HF Spaces.       -->
+---
+title: CodeContext
+emoji: 🔍
+colorFrom: purple
+colorTo: indigo
+sdk: docker
+app_port: 7860
+pinned: false
+---
+
 # CodeContext: RAG/MCP System for Codebase Understanding
 
 A hybrid RAG (Retrieval-Augmented Generation) and MCP (Model Context Protocol) system designed to accelerate developer onboarding by providing intelligent, source-referenced answers about codebases.
