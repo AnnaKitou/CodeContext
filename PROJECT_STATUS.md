@@ -1,5 +1,11 @@
 # CodeContext - Project Status & Roadmap
 
+> **Note (current):** The core GenAI pipeline is now **implemented**, not just scaffolded —
+> tree-sitter semantic chunking, ChromaDB vector retrieval, the Claude agent with a tool-use
+> loop, and the GitHub MCP integration are all working end-to-end. The "Not Yet Implemented"
+> items further down this file are historical and superseded by **[DOCUMENTATION.md](DOCUMENTATION.md)**,
+> which describes what actually exists today.
+
 ## Current Status: ✅ **Project Scaffolding Complete**
 
 The foundation of CodeContext has been set up with proper architecture, file structure, and placeholder implementations.

@@ -58,8 +58,7 @@ class Settings(BaseSettings):
 
     # ── Anthropic ─────────────────────────────────────────────────────────────
     ANTHROPIC_API_KEY: str = "changethis"
-    ANTHROPIC_MODEL: str = "claude-opus-4-5"
-    ANTHROPIC_EMBEDDING_MODEL: str = "text-embedding-3-small"
+    ANTHROPIC_MODEL: str = "claude-sonnet-4-6"
 
     # ── GitHub / MCP ─────────────────────────────────────────────────────────
     GITHUB_TOKEN: str | None = None

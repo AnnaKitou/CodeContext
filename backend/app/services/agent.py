@@ -7,7 +7,7 @@ to synthesize comprehensive answers with citations.
 
 import json
 import logging
-import requests
+import re
 
 from app.models.schemas import Citation
 
@@ -20,21 +20,22 @@ class CodeContextAgent:
 
     Uses Claude API with:
     - Retrieved code chunks as context
-    - MCP tools for live GitHub data
-    - Function calling for tool use
+    - MCP tools for live GitHub data (when mcp_server is provided)
+    - Tool-use agentic loop for multi-step reasoning
     """
 
-    def __init__(self, anthropic_client=None, mcp_server=None):
+    def __init__(self, anthropic_client=None, mcp_server=None, model: str = "claude-sonnet-4-6"):
         """
         Initialize the agent.
 
         Args:
-            anthropic_client: Anthropic API client
-            mcp_server: MCP server for GitHub integration
+            anthropic_client: Anthropic SDK client instance
+            mcp_server: MCPGithubServer for live GitHub data (optional)
+            model: Claude model to use
         """
         self.anthropic_client = anthropic_client
         self.mcp_server = mcp_server
-        self.model = "claude-opus-4-8"
+        self.model = model
 
     async def answer(
         self,
@@ -48,167 +49,130 @@ class CodeContextAgent:
         Args:
             query: User's question
             retrieved_chunks: Code chunks from RAG retriever
-            use_mcp: Whether to use MCP tools
+            use_mcp: Whether to use MCP tools for live GitHub data
 
         Returns:
-            Tuple of (answer, citations, mcp_calls_made)
+            Tuple of (answer_text, citations, mcp_calls_made)
         """
         logger.info(f"Agent answering query: {query[:100]}...")
 
-        try:
-            if not self.anthropic_client:
-                raise ValueError("Anthropic client not initialized")
+        if not self.anthropic_client:
+            raise ValueError("Anthropic client not initialized")
 
-            # Build context from retrieved chunks
-            context = self._build_context(retrieved_chunks)
+        context = self._build_context(retrieved_chunks)
 
-            # Create system prompt
-            system_prompt = """You are a helpful AI assistant that answers questions about codebases.
-You have access to relevant code snippets that may help answer the user's question.
+        system_prompt = (
+            "You are a helpful AI assistant that answers questions about codebases.\n"
+            "You have access to relevant code snippets that may help answer the user's question.\n\n"
+            "When answering:\n"
+            "1. Use the provided code snippets to inform your answer\n"
+            "2. Reference specific files and line numbers when citing code "
+            "(format: filename.py:line_number or filename.py:start-end)\n"
+            "3. Be clear and concise about what code you're referencing\n"
+            "4. If you're unsure about something, say so"
+        )
 
-When answering:
-1. Use the provided code snippets to inform your answer
-2. Reference specific files and line numbers when citing code
-3. Be clear about what code you're referencing
-4. If you're unsure about something, say so
+        user_message = (
+            f"Question: {query}\n\n"
+            f"Here are relevant code snippets from the codebase:\n\n"
+            f"{context}\n\n"
+            "Please answer the question based on the provided code context."
+        )
 
-Format file references as: filename.py:line_number or filename.py:start_line-end_line"""
+        mcp_calls: list[str] = []
+        tools = self._get_mcp_tools() if (use_mcp and self.mcp_server) else []
 
-            # Prepare messages
-            user_message = f"""Question: {query}
+        messages: list[dict] = [{"role": "user", "content": user_message}]
 
-Here are relevant code snippets from the codebase:
+        kwargs: dict = {
+            "model": self.model,
+            "max_tokens": 2048,
+            "system": system_prompt,
+            "messages": messages,
+        }
+        if tools:
+            kwargs["tools"] = tools
 
-{context}
+        response = self.anthropic_client.messages.create(**kwargs)
 
-Please answer the question based on the provided code context."""
+        # Agentic tool-use loop
+        while response.stop_reason == "tool_use" and self.mcp_server:
+            tool_results = []
+            for block in response.content:
+                if block.type == "tool_use":
+                    mcp_calls.append(block.name)
+                    logger.info(f"Calling MCP tool: {block.name}")
+                    try:
+                        result = await self.mcp_server.execute_tool(block.name, **block.input)
+                    except Exception as e:
+                        result = {"error": str(e)}
+                    tool_results.append({
+                        "type": "tool_result",
+                        "tool_use_id": block.id,
+                        "content": json.dumps(result),
+                    })
 
-            # Get API key from client
-            api_key = self.anthropic_client.api_key
+            messages.append({"role": "assistant", "content": list(response.content)})
+            messages.append({"role": "user", "content": tool_results})
+            kwargs["messages"] = messages
+            response = self.anthropic_client.messages.create(**kwargs)
 
-            # Call Claude API via direct HTTP request
-            headers = {
-                "x-api-key": api_key,
-                "anthropic-version": "2023-06-01",
-                "content-type": "application/json",
-            }
+        # Extract final text answer
+        answer_text = ""
+        for block in response.content:
+            if block.type == "text":
+                answer_text += block.text
 
-            payload = {
-                "model": self.model,
-                "max_tokens": 2048,
-                "system": system_prompt,
-                "messages": [
-                    {"role": "user", "content": user_message},
-                ],
-            }
-
-            response = requests.post(
-                "https://api.anthropic.com/v1/messages",
-                json=payload,
-                headers=headers,
-            )
-
-            # Extract answer from response
-            answer_text = ""
-            mcp_calls = []
-
-            if response.status_code == 200:
-                response_data = response.json()
-                for block in response_data.get("content", []):
-                    if block.get("type") == "text":
-                        answer_text += block.get("text", "")
-                    elif block.get("type") == "tool_use":
-                        mcp_calls.append(block.get("name", ""))
-            else:
-                raise Exception(f"API error ({response.status_code}): {response.text}")
-
-            # Extract citations from answer and context
-            citations = self._extract_citations(answer_text, retrieved_chunks)
-
-            return answer_text, citations, mcp_calls
-
-        except Exception as e:
-            logger.error(f"Agent error: {str(e)}")
-            raise
+        citations = self._extract_citations(answer_text, retrieved_chunks)
+        return answer_text, citations, mcp_calls
 
     def _build_context(self, chunks: list) -> str:
-        """
-        Build a context string from retrieved chunks.
-
-        Args:
-            chunks: List of RetrievedChunk objects
-
-        Returns:
-            Formatted context string for the prompt
-        """
-        context_parts = []
-
+        """Build a formatted context string from retrieved code chunks."""
+        parts = []
         for i, chunk in enumerate(chunks, 1):
-            header = f"\n## Code Snippet {i} ({chunk.file}:{chunk.start_line}-{chunk.end_line})\n"
-            context_parts.append(header)
-            context_parts.append(f"```{chunk.language}\n{chunk.content}\n```\n")
-
-        return "".join(context_parts)
+            parts.append(
+                f"\n## Code Snippet {i} ({chunk.file}:{chunk.start_line}-{chunk.end_line})\n"
+                f"```{chunk.language}\n{chunk.content}\n```\n"
+            )
+        return "".join(parts)
 
     def _extract_citations(
         self, answer: str, retrieved_chunks: list
     ) -> list[Citation]:
-        """
-        Extract file/line citations from the answer and context.
+        """Extract file/line citations from the LLM answer and retrieved chunks."""
+        citations: list[Citation] = []
+        seen: set[tuple] = set()
 
-        Args:
-            answer: LLM-generated answer
-            retrieved_chunks: Retrieved code chunks
-
-        Returns:
-            List of Citation objects
-        """
-        import re
-
-        citations = []
-        seen_files = set()
-
-        # Pattern to match file:line references
-        pattern = r"(\S+\.(?:py|js|ts|jsx|tsx|java|cpp|c|go|rs|rb|php))[:\s]*(\d+)?[-–]?(\d+)?"
-
-        matches = re.finditer(pattern, answer, re.IGNORECASE)
-        for match in matches:
+        pattern = r"(\S+\.(?:py|js|ts|jsx|tsx|java|cpp|c|cs|go|rs|rb|php))[:\s]*(\d+)?[-–]?(\d+)?"
+        for match in re.finditer(pattern, answer, re.IGNORECASE):
             file_ref = match.group(1)
-            start_line = int(match.group(2)) if match.group(2) else None
-            end_line = int(match.group(3)) if match.group(3) else start_line
-
-            # Look for matching chunk
             for chunk in retrieved_chunks:
                 if file_ref in chunk.file or chunk.file.endswith(file_ref):
                     key = (chunk.file, chunk.start_line)
-                    if key not in seen_files:
-                        seen_files.add(key)
+                    if key not in seen:
+                        seen.add(key)
                         lines_str = (
                             f"{chunk.start_line}-{chunk.end_line}"
                             if chunk.start_line and chunk.end_line
                             else str(chunk.start_line)
                         )
-                        citation = Citation(
+                        citations.append(Citation(
                             file=chunk.file,
                             lines=lines_str,
                             relevance=chunk.relevance_score,
-                            preview=chunk.content[:200] + "..."
-                            if len(chunk.content) > 200
-                            else chunk.content,
-                        )
-                        citations.append(citation)
-                        break
+                            preview=(
+                                chunk.content[:200] + "..."
+                                if len(chunk.content) > 200
+                                else chunk.content
+                            ),
+                        ))
+                    break
 
         return citations
 
     @staticmethod
     def _get_mcp_tools() -> list[dict]:
-        """
-        Define available MCP tools.
-
-        Returns:
-            List of tool definitions for Claude
-        """
+        """Tool definitions exposed to Claude for GitHub MCP calls."""
         return [
             {
                 "name": "get_file_blame",
@@ -216,65 +180,42 @@ Please answer the question based on the provided code context."""
                 "input_schema": {
                     "type": "object",
                     "properties": {
-                        "file_path": {
-                            "type": "string",
-                            "description": "Path to the file",
-                        },
-                        "line_number": {
-                            "type": "integer",
-                            "description": "Optional: specific line number",
-                        },
+                        "file_path": {"type": "string", "description": "Path to the file"},
+                        "line_number": {"type": "integer", "description": "Optional specific line"},
                     },
                     "required": ["file_path"],
                 },
             },
             {
                 "name": "get_issue",
-                "description": "Get GitHub issue details",
+                "description": "Get GitHub issue details by issue number",
                 "input_schema": {
                     "type": "object",
                     "properties": {
-                        "issue_number": {
-                            "type": "integer",
-                            "description": "GitHub issue number",
-                        },
+                        "issue_number": {"type": "integer", "description": "GitHub issue number"},
                     },
                     "required": ["issue_number"],
                 },
             },
             {
                 "name": "get_pull_requests",
-                "description": "Search for pull requests by state, label, or keyword",
+                "description": "Search for pull requests by state or keyword",
                 "input_schema": {
                     "type": "object",
                     "properties": {
-                        "state": {
-                            "type": "string",
-                            "enum": ["open", "closed", "all"],
-                            "description": "PR state",
-                        },
-                        "keyword": {
-                            "type": "string",
-                            "description": "Search keyword",
-                        },
+                        "state": {"type": "string", "enum": ["open", "closed", "all"]},
+                        "keyword": {"type": "string", "description": "Search keyword in title/body"},
                     },
                 },
             },
             {
                 "name": "get_commit_history",
-                "description": "Get commit history for a file",
+                "description": "Get recent commit history for a specific file",
                 "input_schema": {
                     "type": "object",
                     "properties": {
-                        "file_path": {
-                            "type": "string",
-                            "description": "Path to the file",
-                        },
-                        "limit": {
-                            "type": "integer",
-                            "description": "Number of commits to return",
-                            "default": 10,
-                        },
+                        "file_path": {"type": "string", "description": "Path to the file"},
+                        "limit": {"type": "integer", "description": "Number of commits (default 10)"},
                     },
                     "required": ["file_path"],
                 },

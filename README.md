@@ -5,31 +5,36 @@ A hybrid RAG (Retrieval-Augmented Generation) and MCP (Model Context Protocol) s
 ## Overview
 
 **CodeContext** combines:
-- **RAG (Retrieval-Augmented Generation)**: Semantic code chunking with tree-sitter and vector embeddings via ChromaDB
-- **MCP (Model Context Protocol)**: Live access to GitHub data (issues, PRs, git blame)
-- **LLM Agent**: Claude API with function calling for intelligent synthesis
+- **RAG (Retrieval-Augmented Generation)**: Semantic code chunking with tree-sitter and vector search via ChromaDB
+- **MCP (Model Context Protocol)**: Live access to GitHub data (issues, PRs, git blame, commit history)
+- **LLM Agent**: Claude API with tool use for intelligent synthesis
 
-The system provides a chat interface where developers can ask questions about a codebase and receive answers with precise file/line citations.
+Ask questions about any GitHub repository and get answers with precise file/line citations.
+
+> New here? See **[QUICKSTART.md](QUICKSTART.md)** to be running in ~5 minutes.
+> Full technical write-up: **[DOCUMENTATION.md](DOCUMENTATION.md)**.
 
 ## Architecture
 
 ```
 ┌─────────────────────────────────────────────────────────┐
-│                    Gradio Frontend                      │
-│              (Chat Interface + Citations)               │
+│                      Web UI                             │
+│   HTML SPA (port 8000, served by FastAPI)               │
+│   — or — Gradio (port 7860, optional)                   │
 └──────────────────────┬──────────────────────────────────┘
                        │
         ┌──────────────┴──────────────┐
         │                             │
    ┌────▼──────────┐          ┌──────▼──────────┐
    │  /ingest      │          │  /query         │
-   │  (Upload code)│          │  (Ask question) │
+   │  (Index repo) │          │  (Ask question) │
    └────┬──────────┘          └──────┬──────────┘
         │                            │
    ┌────▼──────────────────────────┬─▼────────────────┐
    │      Indexing Pipeline        │   RAG Retriever  │
-   │  • tree-sitter chunking       │   • Vector search│
-   │  • Embedding generation       │   • Top-k chunks │
+   │  • git clone                  │   • Vector search│
+   │  • tree-sitter chunking       │   • Top-k chunks │
+   │  • ChromaDB embeddings        │                  │
    └────┬──────────────────────────┴──────┬───────────┘
         │                                 │
    ┌────▼──────────────────┐     ┌───────▼────────┐
@@ -46,13 +51,19 @@ The system provides a chat interface where developers can ask questions about a 
 ## Tech Stack
 
 - **Backend**: FastAPI
-- **Code Analysis**: tree-sitter (AST-based chunking)
-- **Vector DB**: ChromaDB
-- **Embeddings**: Anthropic Claude API
-- **LLM**: Claude API (with tool use)
-- **MCP**: Model Context Protocol SDK (GitHub)
-- **Frontend**: Gradio
+- **Code Analysis**: tree-sitter (AST-based chunking, per-language grammars)
+- **Vector DB**: ChromaDB (persistent, cosine similarity)
+- **Embeddings**: ChromaDB default embedder (`all-MiniLM-L6-v2`)
+- **LLM**: Claude API (`claude-sonnet-4-6`, with tool use)
+- **MCP**: GitHub API via PyGithub
+- **Frontend**: HTML/CSS/JS single-page app (primary) · Gradio (optional)
 - **Language**: Python 3.11+
+- **Package manager**: uv
+
+### Supported languages (semantic chunking)
+
+Python, JavaScript, TypeScript, TSX, Go, Java, C, C++, C#, Rust, Ruby — via dedicated
+tree-sitter grammars, with a regex fallback for Python, JS/TS, and C#.
 
 ## Project Structure
 
@@ -60,82 +71,123 @@ The system provides a chat interface where developers can ask questions about a 
 CodeContext/
 ├── backend/
 │   ├── app/
-│   │   ├── main.py                 # FastAPI app entry
+│   │   ├── main.py                 # FastAPI app — serves API + web UI
 │   │   ├── core/
-│   │   │   ├── config.py           # Pydantic settings
-│   │   │   ├── security.py         # Auth, API keys
-│   │   │   └── embeddings.py       # Embedding generation
+│   │   │   └── config.py           # Pydantic settings (loads .env)
 │   │   ├── api/
 │   │   │   └── routes/
-│   │   │       ├── ingest.py       # POST /ingest
-│   │   │       └── query.py        # POST /query
+│   │   │       ├── ingest.py       # POST/DELETE /api/v1/ingest
+│   │   │       └── query.py        # POST /api/v1/query
 │   │   ├── models/
-│   │   │   └── schemas.py          # Pydantic models
-│   │   ├── crud/
-│   │   │   └── vector_db.py        # ChromaDB operations
+│   │   │   └── schemas.py          # Pydantic request/response models
+│   │   ├── crud/                   # (reserved)
 │   │   └── services/
-│   │       ├── chunking.py         # tree-sitter chunking
-│   │       ├── retriever.py        # RAG retrieval
-│   │       ├── agent.py            # LLM agent + MCP
-│   │       └── mcp_server.py       # MCP integration
+│   │       ├── chunking.py         # tree-sitter semantic chunking
+│   │       ├── retriever.py        # ChromaDB RAG retrieval
+│   │       ├── agent.py            # Claude agent + MCP tool loop
+│   │       └── mcp_server.py       # GitHub MCP integration
 │   └── tests/
 ├── frontend/
-│   └── app.py                      # Gradio interface
+│   ├── index.html                  # Primary web UI (served at :8000)
+│   └── app.py                      # Optional Gradio interface (:7860)
 ├── scripts/
 │   ├── setup.sh                    # Project setup
 │   └── eval.py                     # Evaluation script
+├── evaluation/                     # Eval datasets
 ├── pyproject.toml
 ├── .env.example
-├── DEVELOPMENT.md
+├── QUICKSTART.md
 └── README.md
 ```
 
 ## Quick Start
 
+> Full step-by-step walkthrough: **[QUICKSTART.md](QUICKSTART.md)**
+
 ### Prerequisites
 - Python 3.11+
-- uv (package manager)
-- Anthropic API key
+- [uv](https://docs.astral.sh/uv/) (package manager)
+- An Anthropic API key
+- `git` on your PATH (used to clone repositories during ingest)
 
 ### Setup
 
-1. **Clone and setup**:
+1. **Install dependencies** (from the project root):
    ```bash
-   cd backend
    uv sync
    ```
 
 2. **Configure environment**:
    ```bash
    cp .env.example .env
-   # Edit .env with your API keys
+   # Edit .env — set ANTHROPIC_API_KEY (and optionally GITHUB_TOKEN for MCP)
    ```
 
-3. **Run backend**:
+3. **Run the backend** (serves both the API and the web UI):
    ```bash
-   cd backend
-   fastapi dev app/main.py
+   uv run fastapi dev backend/app/main.py
    ```
+   Open **http://localhost:8000** for the web UI.
 
-4. **Run frontend** (in another terminal):
+4. **(Optional) Run the Gradio frontend** in a second terminal:
    ```bash
-   cd frontend
-   uv run app.py
+   uv run python frontend/app.py
    ```
+   Open **http://localhost:7860**.
 
 ## Usage
 
-1. **Ingest Code** (`POST /ingest`):
-   ```bash
-   curl -X POST http://localhost:8000/api/v1/ingest \
-     -F "files=@mycode.py" \
-     -F "repository_url=https://github.com/user/repo"
-   ```
+### Web UI (recommended)
 
-2. **Query** via Gradio UI at `http://localhost:7860`:
-   - Ask questions about the codebase
-   - Receive answers with file/line citations
-   - View source code highlights
+Open **http://localhost:8000**:
+1. Go to **Ingest** → paste a GitHub URL + a name → click **Index repository**.
+   Tick **Replace existing index** (or use **Clear Index**) when switching repos so
+   old results don't mix in.
+2. Go to **Chat** → ask questions and get answers with file/line citations.
+
+### API
+
+Ingest a repository:
+```bash
+curl -X POST http://localhost:8000/api/v1/ingest \
+  -H "Content-Type: application/json" \
+  -d '{
+        "repository_url": "https://github.com/tiangolo/fastapi",
+        "repository_name": "fastapi",
+        "clear_before_ingest": true
+      }'
+```
+
+Query the indexed codebase:
+```bash
+curl -X POST http://localhost:8000/api/v1/query \
+  -H "Content-Type: application/json" \
+  -d '{ "query": "How is authentication handled?", "top_k": 5, "use_mcp": true }'
+```
+
+Clear the index:
+```bash
+curl -X DELETE http://localhost:8000/api/v1/ingest
+```
+
+Interactive API docs are available at **http://localhost:8000/docs**.
+
+## Configuration
+
+Key `.env` settings (see [.env.example](.env.example) for the full list):
+
+| Variable | Purpose | Default |
+|----------|---------|---------|
+| `ANTHROPIC_API_KEY` | Claude API key (**required**) | `changethis` |
+| `ANTHROPIC_MODEL` | Claude model used by the agent | `claude-sonnet-4-6` |
+| `GITHUB_TOKEN` | Enables MCP GitHub tools (blank = MCP disabled) | — |
+| `GITHUB_REPO_OWNER` / `GITHUB_REPO_NAME` | Repo the MCP tools target | — |
+| `CHROMA_DB_PATH` | ChromaDB persistence directory | `./chroma_db` |
+| `RETRIEVER_TOP_K` | Chunks retrieved per query | `5` |
+| `RETRIEVER_SCORE_THRESHOLD` | Minimum relevance score | `0.3` |
+
+> **MCP** is only active when `GITHUB_TOKEN`, `GITHUB_REPO_OWNER`, and `GITHUB_REPO_NAME`
+> are all set. Otherwise the agent answers from RAG context alone.
 
 ## Research Questions
 
@@ -152,15 +204,7 @@ CodeContext/
 - **Citation Accuracy**: % of citations pointing to truly relevant code
 - **Baseline Comparison**: Naive chunking vs tree-sitter chunking
 
-See `scripts/eval.py` for evaluation framework.
-
-## Deliverables
-
-- ✅ Full codebase (public GitHub repository)
-- ✅ Technical documentation (README, DEVELOPMENT.md, architecture diagrams)
-- ✅ Evaluation dataset and reproducible scripts
-- ✅ Written report with results and analysis
-- ✅ Demo (Gradio UI)
+See `scripts/eval.py` for the evaluation framework.
 
 ## License
 

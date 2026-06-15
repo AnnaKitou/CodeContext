@@ -18,6 +18,18 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
+
+def _rmtree_windows_safe(path: str) -> None:
+    """Remove a directory tree, handling Windows read-only files (e.g. .git objects)."""
+    def _on_error(func, failed_path, exc_info):
+        try:
+            os.chmod(failed_path, stat.S_IWUSR | stat.S_IRUSR)
+            time.sleep(0.05)
+            func(failed_path)
+        except Exception as inner:
+            logger.debug(f"Could not remove {failed_path}: {inner}")
+    shutil.rmtree(path, onerror=_on_error)
+
 # Global retriever instance for ingestion
 _ingest_retriever = None
 
@@ -126,14 +138,7 @@ async def ingest_codebase(request: IngestRequest) -> IngestResponse:
         # Cleanup: remove cloned repository
         if repo_path and os.path.exists(repo_path):
             try:
-                # On Windows, use onerror to handle permission issues
-                def handle_remove_error(func, path, exc_info):
-                    if not os.access(path, os.W_OK):
-                        os.chmod(path, stat.S_IWUSR | stat.S_IRUSR)
-                        time.sleep(0.1)
-                        func(path)
-
-                shutil.rmtree(repo_path, onerror=handle_remove_error)
+                _rmtree_windows_safe(repo_path)
                 logger.info(f"Cleaned up temporary repository at {repo_path}")
             except Exception as e:
                 logger.warning(f"Failed to cleanup {repo_path}: {str(e)}")
@@ -161,7 +166,7 @@ async def clone_repository(repo_url: str, repo_name: str) -> str:
 
     # Remove existing clone if present
     if repo_path.exists():
-        shutil.rmtree(repo_path)
+        _rmtree_windows_safe(str(repo_path))
 
     try:
         # Run git clone in executor to avoid blocking event loop

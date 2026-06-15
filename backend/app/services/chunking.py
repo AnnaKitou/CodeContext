@@ -5,11 +5,12 @@ Splits code into semantic units (functions, classes, methods) rather than
 fixed-size chunks, preserving code structure and context.
 """
 
+import importlib
 import logging
+import re
 from dataclasses import dataclass, field
 from typing import Any, Optional
 
-import tree_sitter
 from tree_sitter import Language, Parser
 
 logger = logging.getLogger(__name__)
@@ -33,34 +34,47 @@ class SemanticChunker:
     """
     Chunks code files into semantic units using tree-sitter AST.
 
-    Supports Python, JavaScript, TypeScript, Go, and other languages.
+    Supports Python, JavaScript, TypeScript, Go, Java, C/C++, C#, Rust, Ruby.
+    Falls back to regex-based chunking when a parser is unavailable.
     """
+
+    # Maps language name → (pip package module, exported function name)
+    _LANG_SPECS: dict[str, tuple[str, str]] = {
+        "python":     ("tree_sitter_python",    "language"),
+        "javascript": ("tree_sitter_javascript", "language"),
+        "typescript": ("tree_sitter_typescript", "language_typescript"),
+        "tsx":        ("tree_sitter_typescript", "language_tsx"),
+        "go":         ("tree_sitter_go",         "language"),
+        "java":       ("tree_sitter_java",       "language"),
+        "cpp":        ("tree_sitter_cpp",        "language"),
+        "c":          ("tree_sitter_c",          "language"),
+        "c_sharp":    ("tree_sitter_c_sharp",    "language"),
+        "rust":       ("tree_sitter_rust",       "language"),
+        "ruby":       ("tree_sitter_ruby",       "language"),
+    }
 
     def __init__(self):
         """Initialize the chunker with tree-sitter."""
         self.parsers: dict[str, Parser] = {}
-        self.languages = {
-            "python": "python",
-            "javascript": "javascript",
-            "typescript": "typescript",
-            "go": "go",
-            "java": "java",
-            "cpp": "cpp",
-            "c": "c",
-        }
         self._init_parsers()
 
     def _init_parsers(self) -> None:
-        """Initialize tree-sitter parsers for supported languages."""
-        for lang_name in self.languages.values():
+        """Initialize tree-sitter parsers for all supported languages."""
+        ok, fail = [], []
+        for lang_name, (module_name, func_name) in self._LANG_SPECS.items():
             try:
-                language = Language("tree_sitter_{}".format(lang_name), lang_name)
-                parser = Parser()
-                parser.set_language(language)
-                self.parsers[lang_name] = parser
-                logger.info(f"Initialized parser for {lang_name}")
+                mod = importlib.import_module(module_name)
+                lang_fn = getattr(mod, func_name)
+                language = Language(lang_fn())
+                self.parsers[lang_name] = Parser(language)
+                ok.append(lang_name)
             except Exception as e:
-                logger.warning(f"Failed to initialize parser for {lang_name}: {str(e)}")
+                fail.append(lang_name)
+                logger.debug(f"Parser unavailable for {lang_name}: {e}")
+        if ok:
+            logger.info(f"Tree-sitter parsers ready: {', '.join(sorted(ok))}")
+        if fail:
+            logger.info(f"Regex fallback active for: {', '.join(sorted(fail))}")
 
     def chunk_file(self, file_path: str, content: str, language: str) -> list[CodeChunk]:
         """
@@ -74,28 +88,22 @@ class SemanticChunker:
         Returns:
             List of CodeChunk objects
         """
-        logger.info(f"Chunking {file_path} ({language})")
-        chunks = []
+        logger.debug(f"Chunking {file_path} ({language})")
 
         if language not in self.parsers:
-            logger.warning(f"Parser not available for {language}, using fallback")
+            logger.debug(f"Parser not available for {language}, using fallback")
             return self._fallback_chunk(file_path, content, language)
 
         try:
             parser = self.parsers[language]
             tree = parser.parse(content.encode("utf-8"))
             root = tree.root_node
-
-            # Extract semantic chunks from the AST
-            chunks = self._extract_definitions(
+            return self._extract_definitions(
                 file_path, content, language, root, root.child_count == 0
             )
-
         except Exception as e:
             logger.error(f"Tree-sitter parsing failed for {file_path}: {str(e)}")
-            chunks = self._fallback_chunk(file_path, content, language)
-
-        return chunks
+            return self._fallback_chunk(file_path, content, language)
 
     def _extract_definitions(
         self,
@@ -105,39 +113,20 @@ class SemanticChunker:
         node: Any,
         is_root: bool = False,
     ) -> list[CodeChunk]:
-        """
-        Extract function and class definitions from AST node.
-
-        Args:
-            file_path: Path to the file
-            content: File content
-            language: Programming language
-            node: AST node to process
-            is_root: Whether this is the root node
-
-        Returns:
-            List of CodeChunk objects
-        """
+        """Extract function and class definitions from AST node."""
         chunks = []
         lines = content.split("\n")
-
-        # Define patterns for different languages
         definition_types = self._get_definition_types(language)
 
         for child in node.children:
             if child.type in definition_types:
                 start_line = child.start_point[0] + 1
                 end_line = child.end_point[0] + 1
-
-                # Extract name from the node
                 name = self._extract_name(child, lines)
-
-                # Get content
                 chunk_content = "\n".join(
                     lines[child.start_point[0] : child.end_point[0] + 1]
                 )
-
-                chunk = CodeChunk(
+                chunks.append(CodeChunk(
                     file=file_path,
                     language=language,
                     type=child.type,
@@ -145,17 +134,10 @@ class SemanticChunker:
                     start_line=start_line,
                     end_line=end_line,
                     content=chunk_content,
-                    metadata={
-                        "source": "tree_sitter",
-                        "node_type": child.type,
-                    },
-                )
-                chunks.append(chunk)
+                    metadata={"source": "tree_sitter", "node_type": child.type},
+                ))
 
-            # Recursively process children for nested definitions
-            nested = self._extract_definitions(
-                file_path, content, language, child, False
-            )
+            nested = self._extract_definitions(file_path, content, language, child, False)
             chunks.extend(nested)
 
         return chunks
@@ -163,7 +145,7 @@ class SemanticChunker:
     @staticmethod
     def _get_definition_types(language: str) -> set[str]:
         """Get AST node types that represent definitions in a language."""
-        definition_map = {
+        definition_map: dict[str, set[str]] = {
             "python": {
                 "function_definition",
                 "class_definition",
@@ -174,13 +156,27 @@ class SemanticChunker:
                 "class_declaration",
                 "method_definition",
                 "function_expression",
+                "arrow_function",
             },
             "typescript": {
                 "function_declaration",
                 "class_declaration",
                 "method_definition",
                 "function_expression",
+                "arrow_function",
                 "interface_declaration",
+                "type_alias_declaration",
+                "enum_declaration",
+            },
+            "tsx": {
+                "function_declaration",
+                "class_declaration",
+                "method_definition",
+                "function_expression",
+                "arrow_function",
+                "interface_declaration",
+                "type_alias_declaration",
+                "jsx_element",
             },
             "go": {
                 "function_declaration",
@@ -189,6 +185,38 @@ class SemanticChunker:
             "java": {
                 "method_declaration",
                 "class_declaration",
+                "constructor_declaration",
+                "interface_declaration",
+                "annotation_type_declaration",
+            },
+            "cpp": {
+                "function_definition",
+                "class_specifier",
+                "struct_specifier",
+            },
+            "c": {
+                "function_definition",
+                "struct_specifier",
+            },
+            "c_sharp": {
+                "method_declaration",
+                "class_declaration",
+                "interface_declaration",
+                "constructor_declaration",
+                "property_declaration",
+            },
+            "rust": {
+                "function_item",
+                "impl_item",
+                "struct_item",
+                "enum_item",
+                "trait_item",
+            },
+            "ruby": {
+                "method",
+                "singleton_method",
+                "class",
+                "module",
             },
         }
         return definition_map.get(language, set())
@@ -197,7 +225,6 @@ class SemanticChunker:
     def _extract_name(node: Any, lines: list[str]) -> Optional[str]:
         """Extract the name of a function/class from AST node."""
         try:
-            # Look for an identifier child
             for child in node.children:
                 if child.type == "identifier":
                     start = child.start_byte
@@ -205,7 +232,6 @@ class SemanticChunker:
                     line_idx = child.start_point[0]
                     if line_idx < len(lines):
                         line = lines[line_idx]
-                        # Get text from the line
                         return line[start : min(end, len(line))]
             return None
         except Exception:
@@ -214,86 +240,94 @@ class SemanticChunker:
     def _fallback_chunk(
         self, file_path: str, content: str, language: str
     ) -> list[CodeChunk]:
-        """
-        Fallback chunking strategy when tree-sitter parsing fails.
-
-        Uses regex-based detection of function/class definitions.
-        """
-        import re
-
-        chunks = []
+        """Fallback chunking via regex when tree-sitter parser is unavailable."""
+        chunks: list[CodeChunk] = []
         lines = content.split("\n")
 
         if language == "python":
             for i, line in enumerate(lines):
-                if re.match(r"^\s*(def|class)\s+(\w+)", line):
-                    match = re.match(r"^\s*(def|class)\s+(\w+)", line)
-                    if match:
-                        chunk_type = "function_definition" if match.group(1) == "def" else "class_definition"
-                        name = match.group(2)
+                m = re.match(r"^\s*(def|class)\s+(\w+)", line)
+                if m:
+                    chunk_type = "function_definition" if m.group(1) == "def" else "class_definition"
+                    name = m.group(2)
+                    end_line = len(lines)
+                    for j in range(i + 1, len(lines)):
+                        if re.match(r"^\s*(def|class)\s+(\w+)", lines[j]):
+                            end_line = j
+                            break
+                    chunks.append(CodeChunk(
+                        file=file_path, language=language, type=chunk_type,
+                        name=name, start_line=i + 1, end_line=end_line,
+                        content="\n".join(lines[i:end_line]),
+                        metadata={"source": "fallback_regex"},
+                    ))
 
-                        # Find the end of the definition (next def/class or EOF)
-                        end_line = i + 1
-                        for j in range(i + 1, len(lines)):
-                            if re.match(r"^\s*(def|class)\s+(\w+)", lines[j]):
-                                end_line = j
-                                break
+        elif language in ("javascript", "typescript", "tsx"):
+            patterns = [
+                (r"^\s*(?:export\s+)?(?:default\s+)?(?:async\s+)?function\s+(\w+)", "function_declaration"),
+                (r"^\s*(?:export\s+)?(?:default\s+)?class\s+(\w+)", "class_declaration"),
+                (r"^\s*(?:export\s+)?(?:const|let|var)\s+(\w+)\s*=\s*(?:async\s+)?\(.*?\)\s*=>", "arrow_function"),
+                (r"^\s*(?:export\s+)?interface\s+(\w+)", "interface_declaration"),
+                (r"^\s*(?:export\s+)?enum\s+(\w+)", "enum_declaration"),
+                (r"^\s*(?:export\s+)?type\s+(\w+)\s*=", "type_alias_declaration"),
+                (r"^@\w+", "decorated_declaration"),
+            ]
+            i = 0
+            while i < len(lines):
+                line = lines[i]
+                matched = False
+                for pat, node_type in patterns:
+                    m = re.match(pat, line)
+                    if m:
+                        name = m.group(1) if m.lastindex and m.lastindex >= 1 else None
+                        brace_count = line.count("{") - line.count("}")
+                        end = i + 1
+                        if "{" in line:
+                            for j in range(i + 1, len(lines)):
+                                brace_count += lines[j].count("{") - lines[j].count("}")
+                                if brace_count <= 0:
+                                    end = j + 1
+                                    break
+                            else:
+                                end = len(lines)
                         else:
-                            end_line = len(lines)
-
-                        chunk_content = "\n".join(lines[i:end_line])
-                        chunk = CodeChunk(
-                            file=file_path,
-                            language=language,
-                            type=chunk_type,
-                            name=name,
-                            start_line=i + 1,
-                            end_line=end_line,
-                            content=chunk_content,
+                            end = min(i + 20, len(lines))
+                        chunks.append(CodeChunk(
+                            file=file_path, language=language, type=node_type,
+                            name=name, start_line=i + 1, end_line=end,
+                            content="\n".join(lines[i:end]),
                             metadata={"source": "fallback_regex"},
-                        )
-                        chunks.append(chunk)
+                        ))
+                        i = end
+                        matched = True
+                        break
+                if not matched:
+                    i += 1
 
-        elif language == "csharp":
+        elif language == "c_sharp":
             for i, line in enumerate(lines):
-                # Match methods, properties, classes, interfaces
-                match = re.match(
-                    r"^\s*(public|private|protected|internal)?\s*(static)?\s*(?:class|interface|public|private|protected|internal|void|string|int|bool|async|Task)[\s\w<>,]+(\w+)\s*[\({]",
+                m = re.match(
+                    r"^\s*(?:public|private|protected|internal|static|async|override|virtual|abstract|\s)*"
+                    r"(?:class|interface|void|string|int|bool|Task|IActionResult|ActionResult)\s+(\w+)",
                     line,
                 )
-                if match or re.match(r"^\s*(public|private|protected|internal)?\s*(static)?\s*(class|interface)\s+(\w+)", line):
-                    # Extract name
-                    name_match = re.search(r"(class|interface|public|private|protected|internal|void|async|Task)\s+(\w+)", line)
-                    if name_match:
-                        name = name_match.group(2)
-                    else:
-                        name = "unnamed"
-
-                    # Find the end - look for closing brace at same or lower indentation
-                    indent = len(line) - len(line.lstrip())
-                    end_line = i + 1
+                if m:
+                    name = m.group(1)
                     brace_count = line.count("{") - line.count("}")
-
+                    end_line = i + 1
                     for j in range(i + 1, len(lines)):
                         brace_count += lines[j].count("{") - lines[j].count("}")
-                        if brace_count == 0 and lines[j].strip():
+                        if brace_count <= 0 and lines[j].strip():
                             end_line = j + 1
                             break
                     else:
                         end_line = len(lines)
-
-                    chunk_content = "\n".join(lines[i:end_line])
-                    chunk = CodeChunk(
-                        file=file_path,
-                        language=language,
-                        type="method_definition",
-                        name=name,
-                        start_line=i + 1,
-                        end_line=end_line,
-                        content=chunk_content,
+                    chunks.append(CodeChunk(
+                        file=file_path, language=language, type="method_declaration",
+                        name=name, start_line=i + 1, end_line=end_line,
+                        content="\n".join(lines[i:end_line]),
                         metadata={"source": "fallback_regex"},
-                    )
-                    chunks.append(chunk)
+                    ))
 
         return chunks
 
@@ -317,10 +351,8 @@ class SemanticChunker:
                 language = self._detect_language(file_path)
                 with open(file_path, "r", encoding="utf-8") as f:
                     content = f.read()
-
                 chunks = self.chunk_file(file_path, content, language)
                 all_chunks.extend(chunks)
-
             except Exception as e:
                 logger.error(f"Failed to chunk {file_path}: {str(e)}")
 
@@ -334,44 +366,32 @@ class SemanticChunker:
             ".py": "python",
             ".js": "javascript",
             ".ts": "typescript",
-            ".tsx": "typescript",
+            ".tsx": "tsx",
             ".go": "go",
             ".java": "java",
             ".cpp": "cpp",
+            ".cc": "cpp",
+            ".cxx": "cpp",
             ".c": "c",
-            ".cs": "csharp",
-            ".php": "php",
-            ".kotlin": "kotlin",
-            ".swift": "swift",
-            ".scala": "scala",
+            ".cs": "c_sharp",
             ".rb": "ruby",
             ".rs": "rust",
+            ".php": "php",
+            ".kt": "kotlin",
+            ".swift": "swift",
+            ".scala": "scala",
         }
-
         for ext, lang in ext_to_lang.items():
             if file_path.endswith(ext):
                 return lang
-
         return "unknown"
 
 
 def is_code_file(file_path: str) -> bool:
     """Check if file is a code file we should chunk."""
     code_extensions = {
-        ".py",
-        ".js",
-        ".ts",
-        ".tsx",
-        ".go",
-        ".java",
-        ".cpp",
-        ".c",
-        ".rb",
-        ".rs",
-        ".cs",
-        ".php",
-        ".kotlin",
-        ".swift",
-        ".scala",
+        ".py", ".js", ".ts", ".tsx", ".go", ".java",
+        ".cpp", ".cc", ".cxx", ".c", ".rb", ".rs",
+        ".cs", ".php", ".kt", ".swift", ".scala",
     }
     return any(file_path.endswith(ext) for ext in code_extensions)
