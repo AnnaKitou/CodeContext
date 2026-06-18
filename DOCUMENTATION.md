@@ -336,6 +336,15 @@ demonstrate retrieval + agentic reasoning over an arbitrary repo, which needs no
 
 **Prerequisites:** Python 3.11+, [uv](https://docs.astral.sh/uv/), `git` on PATH, an Anthropic API key.
 
+### Clone the Repository
+
+```bash
+git clone https://github.com/AnnaKitou/CodeContext.git
+cd CodeContext
+```
+
+### Install & Run
+
 ```bash
 # 1. Install dependencies (from the project root)
 uv sync
