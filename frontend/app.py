@@ -12,7 +12,7 @@ import gradio as gr
 logger = logging.getLogger(__name__)
 
 API_BASE_URL = "http://localhost:8000/api/v1"
-client = httpx.Client(timeout=60.0)
+client = httpx.Client()  # Will set timeout per-request
 
 
 # ── Chat logic ────────────────────────────────────────────────────────────────
@@ -31,6 +31,7 @@ def chat(message: str, history: list, top_k: int, use_mcp: bool):
                 "use_mcp": use_mcp,
                 "include_code_preview": True,
             },
+            timeout=90.0,  # Query + Claude API call
         )
 
         if resp.status_code != 200:
@@ -79,7 +80,7 @@ def chat(message: str, history: list, top_k: int, use_mcp: bool):
 def clear_index() -> str:
     """Wipe all chunks from ChromaDB."""
     try:
-        resp = client.delete(f"{API_BASE_URL}/ingest")
+        resp = client.delete(f"{API_BASE_URL}/ingest", timeout=30.0)
         if resp.status_code != 200:
             return f"❌ Failed to clear: {resp.json().get('detail', 'Unknown error')}"
         data = resp.json()
@@ -103,6 +104,7 @@ def ingest(repo_url: str, repo_name: str, clear_first: bool) -> str:
                 "repository_name": repo_name,
                 "clear_before_ingest": clear_first,
             },
+            timeout=600.0,  # Clone + chunk + index can take up to 10 minutes
         )
         if resp.status_code != 200:
             detail = resp.json().get("detail", "Unknown error")

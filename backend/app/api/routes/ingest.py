@@ -12,6 +12,7 @@ from fastapi import APIRouter, HTTPException
 from app.core.config import settings
 from app.models.schemas import ClearIndexResponse, IngestRequest, IngestResponse
 from app.services.chunking import SemanticChunker, is_code_file
+from app.services.manifest import FileRepoManifest
 from app.services.retriever import RAGRetriever
 
 logger = logging.getLogger(__name__)
@@ -58,6 +59,12 @@ async def clear_index() -> ClearIndexResponse:
             all_items = retriever.collection.get()
             count = len(all_items.get("ids", []))
             retriever.clear()
+
+            manifest = FileRepoManifest(
+                f"{settings.CHROMA_DB_PATH}/file_repo_manifest.json"
+            )
+            manifest.clear()
+
             logger.info(f"Index cleared: {count} chunks removed")
             return ClearIndexResponse(
                 message=f"Index cleared — {count} chunks removed.", chunks_removed=count
@@ -118,6 +125,12 @@ async def ingest_codebase(request: IngestRequest) -> IngestResponse:
 
         # 4. Store chunks in ChromaDB
         chunks_added = retriever.add_chunks(all_chunks)
+
+        # 5. Save file-to-repo mapping in manifest
+        manifest = FileRepoManifest(
+            f"{settings.CHROMA_DB_PATH}/file_repo_manifest.json"
+        )
+        manifest.add_files(code_files, request.repository_url)
 
         # Get languages used
         languages = set(chunk.language for chunk in all_chunks)

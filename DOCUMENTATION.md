@@ -481,5 +481,89 @@ uv run pytest --cov          # with coverage (configured in pyproject.toml)
 - **Authentication** and basic rate limiting for shared deployments.
 
 ---
+## 15. Testing Images 
+
+This section showcases the application's functionality with both the Gradio and FastAPI (non-Gradio) frontend implementations. Testing validates the indexing, querying, and MCP integration features.
+
+### 15.1 Application Homepage
+
+![Homepage](images/homepage.png)
+*Main application interface - FastAPI frontend with dark purple styling and navigation menu.*
+
+### 15.2 Repository Indexing Process
+
+#### Indexing Flow (Gradio UI)
+![Index Repo Gradio UI](images/index%20repo%20gradio%20ui.png)
+*Gradio-based indexing interface - Simple input field for repository path and indexing controls.*
+
+#### Indexing Process Steps
+![Index a Repo 1](images/Index_a_repo_1.png)
+*Initial indexing state - Shows the beginning of the indexing process.*
+
+![Index Clearing Data](images/Index_a_repo_clearing_all_previous_data.png)
+*Data clearing phase - Demonstrates the replace-existing toggle functionality for clearing previous indices.*
+
+![Indexed Repo Result](images/Indexed_repo.png)
+*Successful indexing result - Displays the indexed repository and status.*
+
+**Analysis - Indexing Process:**
+- **Gradio Version**: Provides a lightweight, straightforward interface with basic input controls. Users can quickly index repositories with minimal UI overhead. The replace-existing toggle is clearly accessible.
+- **FastAPI (Non-Gradio) Version**: Offers a more polished, web-native interface with enhanced styling and user experience. Provides additional context and visual feedback during the indexing process. Better suited for production deployments.
+
+### 15.3 Chat and Query Functionality
+
+#### With MCP Integration
+![Chat Use MCP](images/Chat_Use_Mcp.png)
+*Chat interface with MCP enabled - Demonstrates advanced functionality with MCP server integration.*
+
+![Indexed Repo MCP](images/Indexed%20_repo_use_mcp.png)
+*Results with MCP - Shows enhanced query results when MCP tools are available.*
+
+#### Without MCP Integration
+![Chat No MCP](images/chat_not_use_mcp.png)
+*Chat interface without MCP - Standard query processing without external tool integration.*
+
+**Analysis - Query Process:**
+- **Gradio Version**: MCP integration works through Python backend calls. The UI is simpler but fully functional for querying indexed repositories.
+- **FastAPI (Non-Gradio) Version**: Provides more sophisticated MCP integration with better visual differentiation between MCP-enabled and standard queries. Enhanced logging and error handling for production environments.
+
+### 15.4 Multi-Repository Queries
+
+![Answer Both Repos](images/answer_both_repos.png)
+*Query results from multiple repositories - First example of cross-repo search.*
+
+![Answer Both Repos 1](images/answer_both_repos_1.png)
+*Alternative multi-repo query - Demonstrates consistent results across different repositories.*
+
+**Analysis - Multi-Repo Capability:**
+- Both versions support querying across multiple indexed repositories
+- Gradio version processes queries sequentially with simpler response formatting
+- FastAPI version provides enhanced formatting and better result organization for multiple sources
+
+### 15.5 Additional Features
+
+#### About Page (Gradio)
+![About Gradio](images/About_gradio.png)
+*About section in Gradio - Information and credits display.*
+
+#### Git Blame Integration (Gradio)
+![Git Blame Gradio](images/git_blame_gradio.png)
+*Git blame functionality - Traces code changes and authors within the Gradio interface.*
+
+**Analysis - Feature Availability:**
+- **Gradio Version**: Git blame and metadata features are integrated into the chat interface, accessible through the same conversation flow.
+- **FastAPI Version**: These features are available through dedicated endpoints with dedicated UI pages for better organization and scalability.
+
+### 15.6 Testing Summary
+
+| Feature | Gradio | FastAPI (Non-Gradio) |
+|---------|--------|----------------------|
+| **UI Complexity** | Lightweight | Full-featured |
+| **Performance** | Fast, minimal overhead | Optimized for production |
+| **MCP Integration** | Supported | Enhanced support |
+| **Multi-repo Queries** | ✓ | ✓ |
+| **Git Integration** | Basic | Advanced |
+| **Deployment** | Development/Testing | Production-ready |
+| **Customization** | Limited CSS | Full web styling |
 
 *Made by **Anna Kitou** · kitouanna@gmail.com · MIT License*

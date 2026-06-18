@@ -6,9 +6,14 @@ Provides tools for the LLM agent to access live repository data
 """
 
 import logging
+from pathlib import Path
 from typing import Any, Optional
+from urllib.parse import urlparse
 
 from github import Github, GithubException
+
+from app.core.config import settings
+from app.services.manifest import FileRepoManifest
 
 logger = logging.getLogger(__name__)
 
@@ -36,6 +41,9 @@ class MCPGithubServer:
         self.github_token = github_token
         self.repo_owner = repo_owner
         self.repo_name = repo_name
+        self.manifest = FileRepoManifest(
+            f"{settings.CHROMA_DB_PATH}/file_repo_manifest.json"
+        )
 
         try:
             # Initialize PyGithub client
@@ -47,20 +55,55 @@ class MCPGithubServer:
             self.client = None
             self.repo = None
 
+    def _get_repo_for_file(self, file_path: str) -> tuple[Optional[str], Optional[str]]:
+        """
+        Get repo owner and name for a file by looking up its source repository.
+
+        Args:
+            file_path: Path to the file
+
+        Returns:
+            Tuple of (repo_owner, repo_name) or (None, None) if not found
+        """
+        repo_url = self.manifest.get_repo_url(file_path)
+        if not repo_url:
+            return None, None
+
+        try:
+            parsed = urlparse(repo_url)
+            path_parts = parsed.path.strip("/").split("/")
+            if len(path_parts) >= 2:
+                owner = path_parts[-2]
+                name = path_parts[-1].replace(".git", "")
+                return owner, name
+        except Exception as e:
+            logger.warning(f"Failed to parse repo URL {repo_url}: {e}")
+
+        return None, None
+
     async def get_file_blame(
         self, file_path: str, line_number: Optional[int] = None
     ) -> dict[str, Any]:
         """Get git blame information for a file."""
         logger.info(f"Getting blame for {file_path}")
 
-        if not self.repo:
-            return {"error": "GitHub client not initialized"}
+        owner, name = self._get_repo_for_file(file_path)
+        if not owner or not name:
+            logger.warning(f"No repository found in manifest for {file_path}, using default")
+            if not self.repo:
+                return {"error": "GitHub client not initialized"}
+            repo = self.repo
+        else:
+            try:
+                repo = self.client.get_repo(f"{owner}/{name}")
+            except GithubException as e:
+                logger.warning(f"Failed to get repo {owner}/{name}: {e}, using default")
+                if not self.repo:
+                    return {"error": "GitHub client not initialized"}
+                repo = self.repo
 
         try:
-            commits = list(self.repo.get_commits(path=file_path, per_page=1))
-            if not commits:
-                return {"error": f"No commits found for {file_path}"}
-
+            commits = repo.get_commits(path=file_path)
             commit = commits[0]
             blame_info = {
                 "file": file_path,
@@ -157,14 +200,19 @@ class MCPGithubServer:
         """Get commit history for a file."""
         logger.info(f"Getting commit history for {file_path}")
 
-        if not self.repo:
-            return [{"error": "GitHub client not initialized"}]
+        owner, name = self._get_repo_for_file(file_path)
+        if not owner or not name:
+            logger.warning(f"No repository found in manifest for {file_path}")
+            return [{"error": f"Repository not found for {file_path}"}]
 
         try:
-            commits = self.repo.get_commits(path=file_path, per_page=limit)
+            repo = self.client.get_repo(f"{owner}/{name}")
+            commits = repo.get_commits(path=file_path)
 
             results = []
-            for commit in commits:
+            for i, commit in enumerate(commits):
+                if i >= limit:
+                    break
                 results.append({
                     "sha": commit.sha[:7],
                     "author": commit.commit.author.name if commit.commit.author else "Unknown",
