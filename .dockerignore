@@ -1,0 +1,27 @@
+# Keep the build context (and the image) small and free of local state/secrets.
+.git
+.venv
+venv
+env
+__pycache__
+*.pyc
+.pytest_cache
+.mypy_cache
+.ruff_cache
+htmlcov
+.coverage
+
+# Local runtime state — must NOT go into the image (rebuilt at runtime).
+chroma_db
+temp_repos
+cloned_repo
+
+# Secrets — provided via Space "Secrets", never baked into the image.
+.env
+.env.*
+
+# Editor / OS
+.vscode
+.idea
+.DS_Store
+Thumbs.db

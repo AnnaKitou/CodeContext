@@ -1,0 +1,45 @@
+repos:
+  # ── Standard hooks ───────────────────────────────────────────────────────────
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: check-added-large-files
+      - id: check-toml
+      - id: check-yaml
+      - id: end-of-file-fixer
+        exclude: ^(evaluation/|chroma_db/)
+      - id: trailing-whitespace
+        exclude: ^(evaluation/|chroma_db/)
+
+  # ── ruff lint + format (replaces black + isort) ───────────────────────────
+  - repo: local
+    hooks:
+      - id: ruff-check
+        name: ruff check
+        language: system
+        entry: uv run ruff check --force-exclude --fix --exit-non-zero-on-fix
+        types_or: [python, pyi]
+        pass_filenames: false
+
+      - id: ruff-format
+        name: ruff format
+        language: system
+        entry: uv run ruff format --force-exclude
+        types_or: [python, pyi]
+        pass_filenames: false
+
+      # ── mypy type check ──────────────────────────────────────────────────
+      - id: mypy
+        name: mypy
+        language: system
+        entry: uv run mypy backend/app
+        types_or: [python, pyi]
+        pass_filenames: false
+
+      # ── ty type check (second opinion, same as template) ─────────────────
+      - id: ty
+        name: ty check
+        language: system
+        entry: uv run ty check backend/app
+        types_or: [python, pyi]
+        pass_filenames: false
