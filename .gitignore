@@ -51,7 +51,7 @@ htmlcov/
 .env.test
 
 # Database
-chroma_db/
+**/chroma_db/
 *.db
 *.sqlite
 *.sqlite3
@@ -65,9 +65,12 @@ evaluation/queries.json
 evaluation/ground_truth.json
 evaluation_report.md
 
+# Screenshots — tracked separately; HF Spaces rejects binary files without xet/LFS
+images/
+
 # Repository clones (for ingestion)
-temp_repos/
-cloned_repo/
+**/temp_repos/
+**/cloned_repo/
 
 # IDE configuration
 .vscode/settings.json
