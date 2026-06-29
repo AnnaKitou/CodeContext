@@ -1,5 +1,3 @@
-<!-- Hugging Face Spaces configuration (required at the top of the Space's README). -->
-<!-- Harmless on GitHub; remove this block if you don't deploy to HF Spaces.       -->
 ---
 title: CodeContext
 emoji: 🔍
