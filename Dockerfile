@@ -30,7 +30,8 @@ COPY --chown=user . /app
 RUN uv sync --frozen --no-dev
 
 # Writable, predictable locations for the vector store and temporary clones.
-ENV CHROMA_DB_PATH=/app/chroma_db \
+# Use /home/user for persistent storage across container restarts in HF Spaces.
+ENV CHROMA_DB_PATH=/home/user/.chroma_db \
     PORT=7860
 
 EXPOSE 7860
