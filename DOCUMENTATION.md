@@ -486,7 +486,6 @@ uv run pytest --cov          # with coverage (configured in pyproject.toml)
 - **Multi-repository indexing** with per-repo namespaces, removing the manual-clear step.
 - **Wire up the LLM-as-judge** evaluation to produce real RQ1–RQ3 results.
 - **Streaming responses** in the chat UI for faster perceived latency.
-- **Containerization** (Docker / docker-compose) and a deployable configuration.
 - **Authentication** and basic rate limiting for shared deployments.
 
 ---
