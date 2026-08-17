@@ -6,8 +6,9 @@ Encodes queries and retrieves relevant code chunks based on semantic similarity.
 
 import logging
 from dataclasses import dataclass
-
+from langchain_core.embeddings import Embeddings
 import chromadb
+from .embedder_factory import create_embedder
 
 logger = logging.getLogger(__name__)
 
@@ -34,17 +35,25 @@ class RAGRetriever:
     matches with relevance scores.
     """
 
-    def __init__(self, chroma_client=None, top_k: int = 5, db_path: str = "./chroma_db"):
+    def __init__(
+        self,
+        embeddings: Embeddings | None = None,
+        chroma_client=None,
+        top_k: int = 5,
+        db_path: str = "./chroma_db",
+    ):
         """
         Initialize the retriever.
 
         Args:
+            embeddings: LangChain Embeddings instance (if None, creates from settings)
             chroma_client: ChromaDB client instance
             top_k: Default number of chunks to retrieve
             db_path: Path to ChromaDB persistent storage
         """
         self.top_k = top_k
         self.collection = None
+        self.embeddings = embeddings or create_embedder()
 
         try:
             # Initialize ChromaDB client if not provided
@@ -88,11 +97,10 @@ class RAGRetriever:
                 logger.warning("No ChromaDB collection initialized, returning empty results")
                 return []
 
-            # Query ChromaDB with the query text
-            # ChromaDB will use default embeddings if collection was initialized properly
+            embedding = self.embeddings.embed_query(query)
             results = self.collection.query(
-                query_texts=[query],
-                n_results=top_k,
+                query_embeddings=[embedding],
+                n_results=top_k
             )
 
             chunks = []
@@ -159,11 +167,11 @@ class RAGRetriever:
                         "type": chunk.type or "unknown",
                         "name": chunk.name or "unnamed",
                     }
+                    embedding = self.embeddings.embed_query(chunk.content)
 
-                    # Add to collection
-                    # ChromaDB automatically generates embeddings using default embedder
                     self.collection.add(
                         ids=[chunk_id],
+                        embeddings=[embedding],
                         documents=[chunk.content],
                         metadatas=[metadata],
                     )

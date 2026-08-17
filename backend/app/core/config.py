@@ -59,6 +59,10 @@ class Settings(BaseSettings):
     # ── Anthropic ─────────────────────────────────────────────────────────────
     ANTHROPIC_API_KEY: str = "changethis"
     ANTHROPIC_MODEL: str = "claude-sonnet-4-6"
+    EMBEDDER_MODEL: str = "all-MiniLM-L6-v2"
+
+    # ── Embeddings (Optional: for non-Anthropic providers) ────────────────────
+    OPENAI_API_KEY: str | None = None
 
     # ── GitHub / MCP ─────────────────────────────────────────────────────────
     GITHUB_TOKEN: str | None = None
