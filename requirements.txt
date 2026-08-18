@@ -226,7 +226,7 @@ multidict==6.7.1
     #   yarl
 mypy-extensions==1.1.0
     # via typing-inspect
-numpy==2.5.2
+numpy==2.4.6
     # via
     #   chroma-hnswlib
     #   chromadb
