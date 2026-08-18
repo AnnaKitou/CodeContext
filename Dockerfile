@@ -18,17 +18,11 @@ COPY frontend/ frontend/
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Create data directory for ChromaDB persistence
-RUN mkdir -p /data
+RUN mkdir -p /data && chmod 777 /data
+ENV CHROMA_DB_PATH=/data/chroma_db
 
-# Expose ports: 8000 for FastAPI, 7860 for Gradio
-EXPOSE 8000 7860
+# HF Spaces routes traffic to app_port 7860 — FastAPI serves both the API
+# and the custom HTML frontend (frontend/index.html) at "/"
+EXPOSE 7860
 
-# Run startup script
-CMD bash -c '\
-    export CHROMA_DB_PATH=/data/chroma_db && \
-    echo "Starting FastAPI backend..." && \
-    python -m uvicorn backend.app.main:app --host 0.0.0.0 --port 8000 &> /tmp/backend.log & \
-    sleep 5 && \
-    echo "Starting Gradio frontend..." && \
-    python frontend/app.py \
-    '
+CMD ["python", "-m", "uvicorn", "backend.app.main:app", "--host", "0.0.0.0", "--port", "7860"]
