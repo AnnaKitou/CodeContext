@@ -116,10 +116,6 @@ class RAGRetriever:
                     # Convert distance to similarity score (1 - distance for cosine)
                     relevance_score = max(0, 1 - distance)
 
-                    # Filter by score threshold
-                    if relevance_score < score_threshold:
-                        continue
-
                     file = metadata.get("file", "unknown")
                     start_line = int(metadata.get("start_line", 0))
                     end_line = int(metadata.get("end_line", 0))
@@ -138,7 +134,18 @@ class RAGRetriever:
                     )
                     chunks.append(chunk)
 
-            return chunks
+            # Apply the score threshold, but never return nothing when the
+            # index has data: vague/conversational queries score low against
+            # code embeddings, so fall back to the best raw matches instead.
+            filtered = [c for c in chunks if c.relevance_score >= score_threshold]
+            if not filtered and chunks:
+                logger.info(
+                    f"All {len(chunks)} results below threshold {score_threshold}; "
+                    "falling back to best raw matches"
+                )
+                return chunks
+
+            return filtered
 
         except Exception as e:
             logger.error(f"Retrieval failed: {str(e)}")
