@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import os
 import shutil
@@ -23,14 +24,27 @@ router = APIRouter()
 
 def _rmtree_windows_safe(path: str) -> None:
     """Remove a directory tree, handling Windows read-only files (e.g. .git objects)."""
-    def _on_error(func, failed_path, exc_info):
+    max_retries = 3
+    for attempt in range(max_retries):
         try:
-            os.chmod(failed_path, stat.S_IWUSR | stat.S_IRUSR)
-            time.sleep(0.05)
-            func(failed_path)
-        except Exception as inner:
-            logger.debug(f"Could not remove {failed_path}: {inner}")
-    shutil.rmtree(path, onerror=_on_error)
+            def _on_error(func, failed_path, exc_info):
+                try:
+                    os.chmod(failed_path, stat.S_IWUSR | stat.S_IRUSR)
+                    time.sleep(0.05)
+                    func(failed_path)
+                except Exception as inner:
+                    logger.debug(f"Could not remove {failed_path}: {inner}")
+
+            shutil.rmtree(path, onerror=_on_error)
+            logger.debug(f"Successfully removed {path}")
+            return
+        except Exception as e:
+            if attempt < max_retries - 1:
+                logger.debug(f"Attempt {attempt + 1} to remove {path} failed: {e}, retrying...")
+                time.sleep(0.5)
+            else:
+                logger.warning(f"Failed to remove {path} after {max_retries} attempts: {e}")
+
 
 # Global retriever instance for ingestion
 _ingest_retriever = None
@@ -174,15 +188,46 @@ async def clone_repository(repo_url: str, repo_name: str) -> str:
     Raises:
         HTTPException: If cloning fails
     """
-    import asyncio
-
     temp_dir = Path("./temp_repos")
     temp_dir.mkdir(exist_ok=True)
     repo_path = temp_dir / repo_name
 
     # Remove existing clone if present
     if repo_path.exists():
+        logger.info(f"Removing existing directory: {repo_path}")
         _rmtree_windows_safe(str(repo_path))
+
+        # Wait and verify removal
+        await asyncio.sleep(0.5)
+        if repo_path.exists():
+            logger.warning(f"Directory still exists after removal attempt, forcing cleanup")
+            try:
+                loop = asyncio.get_event_loop()
+                if os.name == 'nt':  # Windows
+                    await loop.run_in_executor(
+                        None,
+                        lambda: subprocess.run(
+                            f'rmdir /s /q "{repo_path}"',
+                            shell=True,
+                            capture_output=True,
+                            timeout=10,
+                        ),
+                    )
+                else:  # Unix
+                    await loop.run_in_executor(
+                        None,
+                        lambda: subprocess.run(
+                            ["rm", "-rf", str(repo_path)],
+                            capture_output=True,
+                            timeout=10,
+                        ),
+                    )
+            except Exception as cleanup_err:
+                logger.error(f"Aggressive cleanup failed: {cleanup_err}")
+                raise HTTPException(
+                    status_code=500,
+                    detail=f"Could not clean up existing repository directory: {str(cleanup_err)}"
+                )
 
     try:
         # Run git clone in executor to avoid blocking event loop
@@ -207,6 +252,7 @@ async def clone_repository(repo_url: str, repo_name: str) -> str:
         if result.returncode != 0:
             raise Exception(f"Git clone failed: {result.stderr}")
 
+        logger.info(f"Successfully cloned repository to {repo_path}")
         return str(repo_path)
 
     except subprocess.TimeoutExpired:
