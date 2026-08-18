@@ -9,7 +9,7 @@ import json
 import logging
 import re
 
-from app.models.schemas import Citation
+from ..models.schemas import Citation
 
 logger = logging.getLogger(__name__)
 

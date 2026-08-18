@@ -8,9 +8,9 @@ from fastapi.responses import FileResponse
 from fastapi.routing import APIRoute
 from fastapi.staticfiles import StaticFiles
 
-from app.api.routes import ingest, query
-from app.core.config import settings
-from app.models.schemas import HealthResponse
+from .api.routes import ingest, query
+from .core.config import settings
+from .models.schemas import HealthResponse
 
 # ── Logging ───────────────────────────────────────────────────────────────────
 
