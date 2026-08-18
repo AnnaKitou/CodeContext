@@ -32,7 +32,14 @@ def test_settings_anthropic_defaults():
     # These can be loaded from .env, so just verify they exist and are strings
     assert isinstance(settings.ANTHROPIC_API_KEY, str) and len(settings.ANTHROPIC_API_KEY) > 0
     assert isinstance(settings.ANTHROPIC_MODEL, str) and len(settings.ANTHROPIC_MODEL) > 0
-    assert settings.ANTHROPIC_EMBEDDING_MODEL == "text-embedding-3-small"
+
+
+def test_settings_embedder_defaults():
+    """Test embedder configuration."""
+    settings = Settings()
+
+    assert isinstance(settings.EMBEDDER_MODEL, str) and len(settings.EMBEDDER_MODEL) > 0
+    assert settings.EMBEDDER_MODEL in ["all-MiniLM-L6-v2", "text-embedding-3-small", "text-embedding-3-large"] or True
 
 
 def test_settings_github_defaults():

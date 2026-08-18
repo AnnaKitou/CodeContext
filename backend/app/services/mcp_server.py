@@ -12,8 +12,8 @@ from urllib.parse import urlparse
 
 from github import Github, GithubException
 
-from app.core.config import settings
-from app.services.manifest import FileRepoManifest
+from ..core.config import settings
+from .manifest import FileRepoManifest
 
 logger = logging.getLogger(__name__)
 

@@ -5,11 +5,12 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException
 from anthropic import Anthropic
 
-from app.core.config import settings
-from app.models.schemas import Citation, QueryRequest, QueryResponse
-from app.services.agent import CodeContextAgent
-from app.services.mcp_server import MCPGithubServer
-from app.services.retriever import RAGRetriever
+from ...core.config import settings
+from ...models.schemas import Citation, QueryRequest, QueryResponse
+from ...services.agent import CodeContextAgent
+from ...services.mcp_server import MCPGithubServer
+from ...services.retriever import RAGRetriever
+from ...services.embedder_factory import create_embedder
 
 logger = logging.getLogger(__name__)
 
@@ -32,7 +33,9 @@ def get_anthropic_client() -> Anthropic:
 def get_retriever() -> RAGRetriever:
     global _retriever
     if _retriever is None:
+        embeddings = create_embedder()
         _retriever = RAGRetriever(
+            embeddings=embeddings,
             top_k=settings.RETRIEVER_TOP_K,
             db_path=settings.CHROMA_DB_PATH,
         )
