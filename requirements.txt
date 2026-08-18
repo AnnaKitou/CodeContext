@@ -406,6 +406,8 @@ safehttpx==0.1.7
     # via gradio
 semantic-version==2.10.0
     # via gradio
+sentence-transformers==3.0.1
+    # via codecontext (pyproject.toml)
 sentry-sdk==2.68.0
     # via
     #   codecontext (pyproject.toml)
