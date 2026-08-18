@@ -72,9 +72,9 @@ class Settings(BaseSettings):
 
     # ── ChromaDB ─────────────────────────────────────────────────────────────
     CHROMA_DB_PATH: str = (
-        "/data/chroma_db"
-        if Path("/data").exists()
-        else "c:\\Users\\Annak\\Desktop\\AI LLM\\Ασκήσεις\\CodeContext\\chroma_db"
+        "/home/user/.codecontext/chroma_db"
+        if Path("/home/user").exists()  # HF Spaces
+        else str(Path.home() / ".codecontext" / "chroma_db")  # Local (cross-platform)
     )
     CHROMA_PERSIST: bool = True
 

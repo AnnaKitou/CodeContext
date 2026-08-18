@@ -6,6 +6,7 @@ Encodes queries and retrieves relevant code chunks based on semantic similarity.
 
 import logging
 from dataclasses import dataclass
+from pathlib import Path
 from langchain_core.embeddings import Embeddings
 import chromadb
 from .embedder_factory import create_embedder
@@ -61,6 +62,8 @@ class RAGRetriever:
             if chroma_client:
                 self.chroma_client = chroma_client
             else:
+                # Ensure the directory exists before initializing ChromaDB
+                Path(db_path).parent.mkdir(parents=True, exist_ok=True)
                 self.chroma_client = chromadb.PersistentClient(path=db_path)
 
             # Get or create collection
