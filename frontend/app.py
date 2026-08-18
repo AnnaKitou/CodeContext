@@ -6,13 +6,44 @@ Uses manual Chatbot + Textbox layout for full compatibility with gr.Blocks + Tab
 
 import httpx
 import logging
+import os
+import subprocess
+import time
+from pathlib import Path
 
 import gradio as gr
 
 logger = logging.getLogger(__name__)
 
+# Setup persistent ChromaDB path for HF Spaces
+if Path("/data").exists():
+    os.environ["CHROMA_DB_PATH"] = "/data/chroma_db"
+
 API_BASE_URL = "http://localhost:8000/api/v1"
 client = httpx.Client()  # Will set timeout per-request
+
+# Start backend if not already running
+def start_backend():
+    """Start FastAPI backend in background."""
+    try:
+        # Check if backend is already running
+        response = httpx.get("http://localhost:8000/docs", timeout=2)
+        logger.info("Backend already running")
+        return
+    except Exception:
+        logger.info("Starting FastAPI backend...")
+        try:
+            subprocess.Popen(
+                ["python", "-m", "uvicorn", "backend.app.main:app", "--host", "0.0.0.0", "--port", "8000"],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+            time.sleep(3)  # Wait for backend to start
+            logger.info("Backend started")
+        except Exception as e:
+            logger.error(f"Failed to start backend: {e}")
+
+start_backend()
 
 
 # ── Chat logic ────────────────────────────────────────────────────────────────

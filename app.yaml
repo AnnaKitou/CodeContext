@@ -2,9 +2,7 @@ title: CodeContext
 emoji: 🔍
 colorFrom: purple
 colorTo: cyan
-sdk: docker
+sdk: gradio
 app_file: frontend/app.py
 pinned: false
-models:
-  - meta-llama/Llama-2-7b-chat-hf
 license: mit
