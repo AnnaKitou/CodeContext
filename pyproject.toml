@@ -24,6 +24,12 @@ dependencies = [
     # Anthropic SDK
     "anthropic>=0.40.0,<1.0.0",
 
+    # LangChain ecosystem
+    "langchain-core>=0.1.0,<1.0.0",
+    "langchain-huggingface>=0.0.1,<1.0.0",
+    "langchain-anthropic>=0.1.0,<1.0.0",
+    "langchain-community>=0.0.1,<1.0.0",
+
     # Code Analysis — individual per-language packages (tree-sitter >= 0.21 API)
     "tree-sitter>=0.23.0,<1.0.0",
     "tree-sitter-python>=0.23.0",
