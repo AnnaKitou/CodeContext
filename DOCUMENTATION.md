@@ -16,15 +16,16 @@
 3. [Technology Stack & Rationale](#3-technology-stack--rationale)
 4. [Architecture & Data Flow](#4-architecture--data-flow)
 5. [Backend — FastAPI Endpoints & Services](#5-backend--fastapi-endpoints--services)
-6. [User Interface](#6-user-interface)
-7. [Generative AI Techniques](#7-generative-ai-techniques)
-8. [Installation & Running](#8-installation--running)
-9. [Usage Examples](#9-usage-examples)
-10. [Screenshots & Demo](#10-screenshots--demo)
-11. [Evaluation & Research Questions](#11-evaluation--research-questions)
-12. [Testing](#12-testing)
-13. [Limitations](#13-limitations)
-14. [Future Extensions](#14-future-extensions)
+6. [Agent V2 — Agentic Reasoning System](#6-agent-v2--agentic-reasoning-system)
+7. [User Interface](#7-user-interface)
+8. [Generative AI Techniques](#8-generative-ai-techniques)
+9. [Installation & Running](#9-installation--running)
+10. [Usage Examples](#10-usage-examples)
+11. [Screenshots & Demo](#11-screenshots--demo)
+12. [Evaluation & Research Questions](#12-evaluation--research-questions)
+13. [Testing](#13-testing)
+14. [Limitations](#14-limitations)
+15. [Future Extensions](#15-future-extensions)
 
 ---
 
@@ -83,12 +84,13 @@ A developer joining a project wants to understand it quickly:
 | Language | **Python 3.11+** | Best ecosystem for LLM tooling, tree-sitter bindings, and ChromaDB. |
 | Code parsing | **tree-sitter** (per-language grammars) | AST-aware chunking keeps a function/class intact as one unit, which produces far more meaningful retrieval results than fixed-size text windows. Dedicated grammars are installed per language (Python, JS, TS/TSX, Go, Java, C, C++, C#, Rust, Ruby). |
 | Vector database | **ChromaDB** (persistent, cosine) | Lightweight, embeddable, zero external service; persists to disk so the index survives restarts. |
-| Embeddings | **ChromaDB default embedder** (`all-MiniLM-L6-v2`, Sentence-Transformers) | Runs locally with no extra API cost or key; good enough to demonstrate the RAG pipeline. *(Note: embeddings are produced by this model, **not** by an Anthropic embedding endpoint.)* |
+| Embeddings | **LangChain HuggingFace Embeddings** (`all-MiniLM-L6-v2`, Sentence-Transformers) | Runs locally with no extra API cost or key via LangChain's HuggingFaceEmbeddings wrapper (`embedder_factory.py`). Supports multiple embedder backends (HuggingFace, Anthropic, OpenAI). *(Note: embeddings are produced locally, **not** by an Anthropic embedding endpoint.)* |
 | LLM | **Anthropic Claude API** (`ANTHROPIC_MODEL`, default `claude-sonnet-4-6`) | Strong code reasoning and native **tool use**, which the agent relies on for MCP calls. |
 | Live repo data (MCP) | **PyGithub** wrapped as MCP-style tools | Provides blame, commit history, issues, and PRs that are *not* present in the static code index. |
 | Frontend (primary) | **HTML + CSS + JavaScript SPA** | Full control over the look and feel; served same-origin by FastAPI, so no CORS or build step. |
 | Frontend (alternative) | **Gradio** | A second, minimal UI for quick demos. |
 | Validation / models | **Pydantic v2** + **pydantic-settings** | Typed request/response schemas and `.env`-driven configuration. |
+| LLM Orchestration | **LangChain Core** (`langchain_core`) | Abstracts embeddings provider interface; enables swapping between HuggingFace, Anthropic, and OpenAI embedders without changing retriever logic. |
 | Tooling | **uv**, **ruff**, **mypy**, **pytest** | Fast dependency management, linting, strict typing, and testing. |
 
 The assignment notes that *not every* GenAI technique must be used and that the chosen mix should
@@ -239,7 +241,8 @@ temp-repo cleanup in a `finally` block.
   Supported: **Python, JavaScript, TypeScript, TSX, Go, Java, C, C++, C#, Rust, Ruby**.
 
 - **`RAGRetriever`** (`services/retriever.py`) — wraps a persistent ChromaDB collection
-  (`code_chunks`, cosine space). `add_chunks` stores each chunk with metadata (file, language,
+  (`code_chunks`, cosine space). Uses LangChain's embeddings interface via `embedder_factory.py`
+  to support multiple embedder backends. `add_chunks` stores each chunk with metadata (file, language,
   line range, type, name); `retrieve` runs a semantic query and converts cosine distance into a
   0–1 relevance score; `clear` empties the collection.
 
@@ -255,7 +258,166 @@ temp-repo cleanup in a `finally` block.
 
 ---
 
-## 6. User Interface
+## 6. Agent V2 — Agentic Reasoning System
+
+CodeContext now includes **Agent V2**, an advanced agentic reasoning system built on the **ReAct pattern** 
+(Reason → Act → Observe → Reflect) that provides intelligent, multi-step code analysis.
+
+### 6.1 Architecture
+
+Agent V2 consists of four specialized services that orchestrate the reasoning process:
+
+1. **QueryAnalyzer** (`services/query_analyzer.py`)
+   - Analyzes query complexity using Claude
+   - Decomposes multi-part questions into sub-queries
+   - Returns priority-ranked decomposition with estimated depth
+   - Fallback: heuristic-based decomposition if analysis fails
+
+2. **AgentPlanner** (`services/agent_planner.py`)
+   - Plans agent strategy before execution
+   - Decides: retrieval type (single/iterative), tools needed, validation approach
+   - Returns structured plan with reasoning
+   - Guided by query complexity and available resources
+
+3. **AdaptiveRetriever** (`services/adaptive_retriever.py`)
+   - Orchestrates single-round or iterative retrieval
+   - Refines queries based on observed results
+   - Tracks retrieval rounds and queries executed
+   - Deduplicates results across rounds
+
+4. **AnswerValidator** (`services/answer_validator.py`)
+   - Performs self-critique using Claude
+   - Validates: grounding, hallucinations, completeness
+   - Returns confidence score and improvement suggestions
+   - Helps identify when answer needs refinement
+
+5. **Enhanced CodeContextAgent** (`services/agent.py`)
+   - Orchestrates the full ReAct loop
+   - Integrates all services into a coherent reasoning chain
+   - Tracks thinking steps for observability
+   - Returns `QueryResponseV2` with visible reasoning
+
+### 6.2 Reasoning Flow
+
+When a query arrives at `/api/v1/query` with `ENABLE_AGENT_V2=true`:
+
+```
+User Query
+    ↓
+[PLAN] QueryAnalyzer
+    → Detect complexity, decompose if needed
+    ↓
+[PLAN] AgentPlanner
+    → Decide strategy: single-round vs iterative
+    → Select tools (RAG, MCP, or both)
+    ↓
+[RETRIEVE] AdaptiveRetriever
+    → Round 1: initial query → chunks
+    → Round 2+: refine based on results (if iterative)
+    ↓
+[REASON] CodeContextAgent (existing)
+    → Call Claude with context
+    → Optional MCP tool calls
+    ↓
+[CRITIQUE] AnswerValidator (if enabled)
+    → Self-critique: is answer grounded?
+    → Detect hallucinations
+    ↓
+[REFLECT] Compile Results
+    → Assemble thinking_process
+    → Return QueryResponseV2
+```
+
+### 6.3 Response Structure
+
+Every response from `/api/v1/query` now includes:
+
+```json
+{
+  "answer": "...",
+  "citations": [...],
+  "mcp_calls": [...],
+  "confidence": 0.92,
+  "processing_time_ms": 3450,
+  
+  "thinking_process": [
+    {"step_type": "plan", "content": "...", "confidence": 0.95},
+    {"step_type": "decompose", "content": "...", "confidence": 0.95},
+    {"step_type": "plan", "content": "...", "confidence": 0.90},
+    {"step_type": "retrieve", "content": "...", "results_found": 12},
+    {"step_type": "reason", "content": "...", "confidence": 0.85},
+    {"step_type": "critique", "content": "...", "confidence": 0.92},
+    {"step_type": "reflect", "content": "...", "confidence": 0.90}
+  ],
+  
+  "query_decomposition": {
+    "original_query": "...",
+    "is_complex": true,
+    "reasoning": "...",
+    "sub_queries": [...]
+  },
+  
+  "validation": {
+    "is_valid": true,
+    "confidence": 0.92,
+    "grounded": true,
+    "hallucination_risk": "low"
+  },
+  
+  "retrieval_rounds": 2,
+  "num_retrieval_queries": 2
+}
+```
+
+### 6.4 Configuration
+
+All agentic features are independently toggleable via `.env`:
+
+```dotenv
+ENABLE_AGENT_V2=true                          # Master switch
+AGENT_ENABLE_QUERY_DECOMPOSITION=true         # Analyze complexity
+AGENT_ENABLE_ITERATIVE_RETRIEVAL=true         # Multi-round retrieval
+AGENT_ENABLE_SELF_CRITIQUE=true               # Validate answers
+AGENT_MAX_RETRIEVAL_ROUNDS=3                  # Max iterations
+AGENT_REASONING_DEPTH=medium                  # shallow/medium/deep
+```
+
+**Graceful degradation:** If any feature fails, the system falls back to simple RAG pipeline.
+
+### 6.5 Key Capabilities
+
+- **Query Decomposition** — Breaks "How does auth work AND who maintains it?" into two sub-questions
+- **Adaptive Retrieval** — Iteratively refines queries when initial results are insufficient
+- **Self-Critique** — Validates answers for grounding and detects hallucinations
+- **Visible Reasoning** — Every response includes the thinking steps (great for debugging & demos)
+- **Tool Integration** — Automatically decides when to use MCP vs pure RAG
+- **Fallback Safety** — Degrades gracefully if Claude returns invalid JSON or tools fail
+
+See [AGENT_V2.md](AGENT_V2.md) for the complete guide.
+
+---
+
+## 6.5 LangChain Integration
+
+CodeContext uses **LangChain Core** and related packages to abstract embeddings providers:
+
+- **`langchain-core`** — Base Embeddings interface used by `RAGRetriever`
+- **`langchain-huggingface`** — HuggingFace embeddings (default, runs locally)
+- **`langchain-anthropic`** — Support for Anthropic text-embedding-3 models (optional)
+- **`langchain-community`** — Fallback for community embedders
+
+The `embedder_factory.py` service (`create_embedder()`) abstracts provider selection:
+```python
+# Automatically selects backend based on model name
+embedder = create_embedder("all-MiniLM-L6-v2")  # → HuggingFaceEmbeddings (local)
+embedder = create_embedder("text-embedding-3-small")  # → Anthropic embeddings
+```
+
+This design allows swapping embedders without modifying `RAGRetriever` logic.
+
+---
+
+## 7. User Interface
 
 The application ships **two** frontends; both talk to the same FastAPI backend.
 
@@ -289,12 +451,12 @@ quick demo. It calls the same REST API.
 
 ---
 
-## 7. Generative AI Techniques
+## 8. Generative AI Techniques
 
 The assignment lists several GenAI techniques and asks that the chosen subset fit the scenario and
 be justified. CodeContext uses **four**, each mapped to concrete code:
 
-### 7.1 RAG — Retrieval-Augmented Generation *(central technique)*
+### 8.1 RAG — Retrieval-Augmented Generation *(central technique)*
 The whole pipeline is RAG: code is **chunked** semantically (`chunking.py`), **embedded and
 stored** in a vector store (`retriever.py` + ChromaDB), and at query time the **most relevant
 chunks are retrieved** and injected into the prompt as grounded context (`agent.py`).
@@ -302,14 +464,14 @@ chunks are retrieved** and injected into the prompt as grounded context (`agent.
 the model must answer from *this* repository's code, not from generic training knowledge, and
 retrieval is what makes the `file:line` citations possible.
 
-### 7.2 Prompt Engineering
+### 8.2 Prompt Engineering
 `CodeContextAgent` uses a **role-based system prompt** that defines the assistant's job, instructs
 it to ground answers in the supplied snippets, to cite using a specific `filename:line` format,
 and to admit uncertainty. The user turn is a structured template combining the question with the
 formatted code context.
 **Why:** disciplined prompting is what turns raw retrieval into consistent, citable answers.
 
-### 7.3 AI Agent + Tool Calling
+### 8.3 AI Agent + Tool Calling
 When MCP is enabled, the agent runs an **agentic tool-use loop**: Claude decides whether to call
 one of the GitHub tools, the backend executes it (`MCPGithubServer.execute_tool`), the result is
 returned to the model, and the loop repeats until a final answer is produced. The four tools
@@ -318,7 +480,7 @@ returned to the model, and the loop repeats until a final answer is produced. Th
 **Why:** some questions ("who wrote this?", "what PR introduced this?") need **live** data that
 isn't in the static index — exactly the case for tools/agents rather than plain generation.
 
-### 7.4 Structured Outputs
+### 8.4 Structured Outputs
 Every API response is a **Pydantic model** (`QueryResponse`, `Citation`, `IngestResponse`, …),
 giving deterministic, validated JSON that the UI can render reliably. Tool definitions also use
 JSON Schema for their inputs.
@@ -330,7 +492,7 @@ demonstrate retrieval + agentic reasoning over an arbitrary repo, which needs no
 
 ---
 
-## 8. Installation & Running
+## 9. Installation & Running
 
 > Full step-by-step guide with troubleshooting: [QUICKSTART.md](QUICKSTART.md).
 
@@ -378,7 +540,7 @@ Secrets live only in `.env` (git-ignored); no keys are committed.
 
 ---
 
-## 9. Usage Examples
+## 10. Usage Examples
 
 ### Via the web UI
 1. Open **http://localhost:8000** → **Ingest** tab.
@@ -409,7 +571,7 @@ curl -X DELETE http://localhost:8000/api/v1/ingest
 
 ---
 
-## 10. Screenshots & Demo
+## 11. Screenshots & Demo
 
 The UI has four views — **Home**, **Chat**, **Ingest**, and **About** — described in detail in
 [§6](#6-user-interface). To capture them for a submission, run the backend (see [§8](#8-installation--running)),
@@ -424,7 +586,7 @@ Place the images under `docs/images/` and embed them here, e.g. `![Chat](docs/im
 
 ---
 
-## 11. Evaluation & Research Questions
+## 12. Evaluation & Research Questions
 
 CodeContext includes an evaluation **framework** (`scripts/eval.py` + `evaluation/`) intended to
 measure retrieval and answer quality against a small labelled dataset.
@@ -446,7 +608,7 @@ measure retrieval and answer quality against a small labelled dataset.
 
 ---
 
-## 12. Testing
+## 13. Testing
 
 The test suite (`backend/tests/`, run with `uv run pytest`) contains roughly **55 tests** across
 three modules, using pytest fixtures (`conftest.py`) for an isolated `.env`, a FastAPI
@@ -464,7 +626,7 @@ uv run pytest --cov          # with coverage (configured in pyproject.toml)
 
 ---
 
-## 13. Limitations
+## 14. Limitations
 
 - **Clone timeout:** repositories are cloned with a 60-second timeout; very large repos may fail.
 - **Index accumulation:** ChromaDB accumulates chunks across ingestions — you must clear or use
@@ -480,7 +642,7 @@ uv run pytest --cov          # with coverage (configured in pyproject.toml)
 
 ---
 
-## 14. Future Extensions
+## 15. Future Extensions
 
 - **Code-specialized embeddings** (e.g. a code-tuned embedding model) for better retrieval.
 - **Multi-repository indexing** with per-repo namespaces, removing the manual-clear step.
@@ -489,7 +651,7 @@ uv run pytest --cov          # with coverage (configured in pyproject.toml)
 - **Authentication** and basic rate limiting for shared deployments.
 
 ---
-## 15. Testing Images 
+## 16. Testing Images 
 
 This section showcases the application's functionality with both the Gradio and FastAPI (non-Gradio) frontend implementations. Testing validates the indexing, querying, and MCP integration features.
 

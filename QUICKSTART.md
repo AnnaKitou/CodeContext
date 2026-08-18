@@ -13,12 +13,20 @@ Welcome to CodeContext! This guide gets you from zero to your first answer in ~5
 ## 1️⃣ Initial Setup (5 minutes)
 
 ### Install dependencies
-From the project root:
+
+**Option A: Using `uv` (recommended)**
 ```bash
 uv sync
 ```
 This creates `.venv/` and installs everything, including the per-language tree-sitter
 grammars (Python, JS/TS, Go, Java, C/C++, C#, Rust, Ruby).
+
+**Option B: Using `pip` (if `uv` not installed)**
+```bash
+python -m venv venv
+source venv/bin/activate          # On Windows: venv\Scripts\activate
+pip install -r requirements.txt
+```
 
 ### Configure API Keys
 ```bash
@@ -28,7 +36,8 @@ cp .env.example .env
 Edit `.env` and set at least your Anthropic key:
 ```dotenv
 ANTHROPIC_API_KEY=sk-ant-...        # required
-ANTHROPIC_MODEL=claude-sonnet-4-6   # default — fine to leave as-is
+ANTHROPIC_MODEL=claude-sonnet-4-6   # default
+ENABLE_AGENT_V2=true                # Enable agentic reasoning (default: true)
 ```
 *(Optional)* enable MCP by setting **all three**:
 ```dotenv
@@ -53,15 +62,7 @@ Then open:
 - **API docs** → http://localhost:8000/docs
 - **Health** → http://localhost:8000/health
 
-## 3️⃣ (Optional) Start the Gradio Frontend (Terminal 2)
-
-The HTML UI at port 8000 is the primary interface. If you prefer Gradio:
-```bash
-uv run python frontend/app.py
-```
-Then open http://localhost:7860 🎉
-
-## 4️⃣ Use the System
+## 3️⃣ Use the System
 
 ### Step A: Index a repository
 1. Go to the **📥 Ingest** tab
@@ -78,24 +79,55 @@ Then open http://localhost:7860 🎉
 >   -d '{"repository_url":"https://github.com/anthropics/anthropic-sdk-python","repository_name":"anthropic-sdk","clear_before_ingest":true}'
 > ```
 
-### Step B: Ask questions
+### Step B: Ask questions (now with agentic reasoning!)
 In the **💬 Chat** tab, try:
 - "What's the main function of this codebase?"
-- "How is authentication implemented?"
-- "What are the key API endpoints?"
+- "How is authentication implemented and who maintains it?"
+- "What are the key API endpoints and how do they work?"
 
 You'll see:
 - 📝 Answer with explanation
 - 📍 Source file citations with line numbers
 - 🔗 Relevant code snippets
 - 🎯 Confidence score
+- **NEW:** 🧠 Thinking process (query decomposition, retrieval strategy, validation)
 
-> Terminal equivalent:
+> Terminal equivalent with visible reasoning:
 > ```bash
 > curl -X POST http://localhost:8000/api/v1/query \
 >   -H "Content-Type: application/json" \
->   -d '{"query":"How is authentication implemented?","top_k":5,"use_mcp":true}'
+>   -d '{"query":"How is authentication implemented?","top_k":5,"use_mcp":true}' | jq '.thinking_process'
 > ```
+
+## 4️⃣ What's New: Agent V2 (Agentic Reasoning)
+
+CodeContext now features **intelligent agentic reasoning** that handles complex questions better:
+
+### ReAct Loop (Reason → Act → Observe → Reflect)
+1. **PLAN** — Analyzes query complexity, decomposes multi-part questions
+2. **PLAN** — Decides retrieval strategy (single-round or iterative)
+3. **RETRIEVE** — Adaptive context gathering (1-3 rounds, refines queries)
+4. **REASON** — Synthesizes answer with Claude + optional MCP tools
+5. **CRITIQUE** — Self-validates answer against context (optional)
+6. **REFLECT** — Returns answer with visible thinking steps
+
+### Visible Reasoning
+Every response includes `thinking_process` field showing:
+- Query decomposition (if complex)
+- Retrieval rounds and queries used
+- Reasoning steps with confidence scores
+- Validation results (hallucination risk, grounding)
+
+### Configuration
+All agentic features are toggleable:
+```dotenv
+ENABLE_AGENT_V2=true                          # Master switch
+AGENT_ENABLE_QUERY_DECOMPOSITION=true         # Analyze complexity
+AGENT_ENABLE_ITERATIVE_RETRIEVAL=true         # Multi-round retrieval
+AGENT_ENABLE_SELF_CRITIQUE=true               # Validate answers
+AGENT_MAX_RETRIEVAL_ROUNDS=3                  # Limit iterations
+AGENT_REASONING_DEPTH=medium                  # shallow/medium/deep
+```
 
 ## 5️⃣ What's Working
 
@@ -103,17 +135,24 @@ You'll see:
 - FastAPI REST API (serves both API and web UI)
 - Pydantic settings / configuration management
 - Service-oriented architecture
+- Agentic reasoning engine (ReAct pattern)
+
+✅ **Agent Services**
+- QueryAnalyzer — Query complexity detection & decomposition
+- AgentPlanner — Strategy planning before execution
+- AdaptiveRetriever — Multi-step retrieval refinement
+- AnswerValidator — Self-critique & hallucination detection
 
 ✅ **Frontend**
 - HTML/CSS/JS single-page app (primary, port 8000)
-- Optional Gradio chat interface (port 7860)
-- Citation display + ingest form
+- Citation display + thinking steps
+- Ingest form
 
-✅ **Core Pipeline (implemented)**
-- **Tree-sitter semantic chunking** — Python, JS, TS, TSX, Go, Java, C, C++, C#, Rust, Ruby (regex fallback for Python/JS/TS/C#)
+✅ **Core Pipeline**
+- **Tree-sitter semantic chunking** — 11+ languages with AST-based parsing
 - **ChromaDB vector database** — persistent, cosine similarity
-- **Embeddings** — ChromaDB default embedder (`all-MiniLM-L6-v2`)
-- **Claude API integration** — agent with tool-use loop (`claude-sonnet-4-6`)
+- **Embeddings** — all-MiniLM-L6-v2 (384-dim)
+- **Claude API integration** — agentic reasoning with tool-use
 - **GitHub MCP integration** — git blame, issues, PRs, commit history
 
 ## 6️⃣ Switching repositories
@@ -140,17 +179,17 @@ Put a real key in `.env`, then restart the backend.
 ### Answers reference an old/wrong repo
 Clear the index (section 6) before re-indexing.
 
-### `Git clone failed` / timeout
-Ensure the URL is public and `git` is on your PATH. Large repos may exceed the 60s clone timeout.
+### Agent returns empty thinking_process
+Check `.env` has `ENABLE_AGENT_V2=true` and restart backend.
+
+### Iterative retrieval doesn't seem to happen
+Verify `AGENT_ENABLE_ITERATIVE_RETRIEVAL=true` for complex queries.
 
 ### "No relevant code context" on every query
-Make sure you indexed a repo first (section 4, Step A).
+Make sure you indexed a repo first (section 3, Step A).
 
 ### MCP tools never fire
 Set `GITHUB_TOKEN`, `GITHUB_REPO_OWNER`, and `GITHUB_REPO_NAME`, and keep `use_mcp: true`.
-
-### Frontend shows "Cannot connect to backend"
-Ensure the backend is running at http://localhost:8000.
 
 ### Windows: permission error cleaning up `temp_repos`
 Handled automatically — read-only `.git` files are chmod'd before removal.
@@ -171,12 +210,15 @@ Handled automatically — read-only `.git` files are chmod'd before removal.
 ## 📚 Documentation
 
 - **[README.md](README.md)** — Project overview & architecture
+- **[AGENT_V2.md](AGENT_V2.md)** — Complete agentic reasoning guide
+- **[DOCUMENTATION.md](DOCUMENTATION.md)** — Technical documentation
+- **[CONTRIBUTING.md](CONTRIBUTING.md)** — Development guide
 
 ## 📞 Need Help?
 
-- Open a GitHub issue for bugs
+- See [AGENT_V2.md](AGENT_V2.md) for troubleshooting agentic features
 - Email: kitouanna@gmail.com
 
 ---
 
-🎉 **Welcome to CodeContext!** Happy coding! 🚀
+🎉 **Welcome to CodeContext!** Now with AI-powered reasoning 🧠✨

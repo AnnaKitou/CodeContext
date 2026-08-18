@@ -17,6 +17,7 @@ logger = logging.getLogger(__name__)
 class RetrievedChunk:
     """A retrieved code chunk with relevance score."""
 
+    id: str
     file: str
     language: str
     start_line: int
@@ -116,11 +117,17 @@ class RAGRetriever:
                     if relevance_score < score_threshold:
                         continue
 
+                    file = metadata.get("file", "unknown")
+                    start_line = int(metadata.get("start_line", 0))
+                    end_line = int(metadata.get("end_line", 0))
+                    chunk_id = f"{file}#{start_line}#{end_line}"
+
                     chunk = RetrievedChunk(
-                        file=metadata.get("file", "unknown"),
+                        id=chunk_id,
+                        file=file,
                         language=metadata.get("language", "unknown"),
-                        start_line=int(metadata.get("start_line", 0)),
-                        end_line=int(metadata.get("end_line", 0)),
+                        start_line=start_line,
+                        end_line=end_line,
                         content=doc,
                         relevance_score=relevance_score,
                         type=metadata.get("type"),

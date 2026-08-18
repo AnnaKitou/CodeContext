@@ -85,6 +85,18 @@ class Settings(BaseSettings):
     USE_MCP: bool = True
     USE_SEMANTIC_CHUNKING: bool = True
 
+    # ── Agent V2 Configuration ────────────────────────────────────────────────
+    ENABLE_AGENT_V2: bool = True
+    AGENT_ENABLE_QUERY_DECOMPOSITION: bool = True
+    AGENT_ENABLE_ITERATIVE_RETRIEVAL: bool = True
+    AGENT_ENABLE_SELF_CRITIQUE: bool = True
+    AGENT_MAX_RETRIEVAL_ROUNDS: int = 3
+    AGENT_REASONING_DEPTH: Literal["shallow", "medium", "deep"] = "medium"
+
+    # ── Multi-Turn Configuration ──────────────────────────────────────────────
+    ENABLE_CONVERSATION_STATE: bool = False
+    CONVERSATION_HISTORY_LIMIT: int = 10
+
     # ── Evaluation ────────────────────────────────────────────────────────────
     EVAL_DATASET_PATH: str = "./evaluation/queries.json"
     EVAL_GROUND_TRUTH_PATH: str = "./evaluation/ground_truth.json"
