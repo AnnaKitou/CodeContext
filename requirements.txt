@@ -32,8 +32,6 @@ asgiref==3.12.1
     # via opentelemetry-instrumentation-asgi
 attrs==26.1.0
     # via aiohttp
-audioop-lts==0.2.2
-    # via gradio
 backoff==2.2.1
     # via posthog
 bcrypt==5.0.0
