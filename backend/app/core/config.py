@@ -71,7 +71,11 @@ class Settings(BaseSettings):
     GITHUB_REPO_NAME: str | None = None
 
     # ── ChromaDB ─────────────────────────────────────────────────────────────
-    CHROMA_DB_PATH: str = "./chroma_db"
+    CHROMA_DB_PATH: str = (
+        "/data/chroma_db"
+        if Path("/data").exists()
+        else "c:\\Users\\Annak\\Desktop\\AI LLM\\Ασκήσεις\\CodeContext\\chroma_db"
+    )
     CHROMA_PERSIST: bool = True
 
     # ── RAG ───────────────────────────────────────────────────────────────────
