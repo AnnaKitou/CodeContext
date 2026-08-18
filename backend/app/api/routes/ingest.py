@@ -9,11 +9,12 @@ from typing import Set
 
 from fastapi import APIRouter, HTTPException
 
-from app.core.config import settings
-from app.models.schemas import ClearIndexResponse, IngestRequest, IngestResponse
-from app.services.chunking import SemanticChunker, is_code_file
-from app.services.manifest import FileRepoManifest
-from app.services.retriever import RAGRetriever
+from ...core.config import settings
+from ...models.schemas import ClearIndexResponse, IngestRequest, IngestResponse
+from ...services.chunking import SemanticChunker, is_code_file
+from ...services.manifest import FileRepoManifest
+from ...services.retriever import RAGRetriever
+from ...services.embedder_factory import create_embedder
 
 logger = logging.getLogger(__name__)
 
@@ -39,7 +40,9 @@ def get_ingest_retriever() -> RAGRetriever:
     """Get or create retriever instance for ingestion."""
     global _ingest_retriever
     if _ingest_retriever is None:
+        embeddings = create_embedder()
         _ingest_retriever = RAGRetriever(
+            embeddings=embeddings,
             top_k=settings.RETRIEVER_TOP_K,
             db_path=settings.CHROMA_DB_PATH,
         )
