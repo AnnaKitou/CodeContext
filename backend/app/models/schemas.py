@@ -13,6 +13,7 @@ class IngestRequest(BaseModel):
     )
 
 
+
 class ClearIndexResponse(BaseModel):
     """Response after clearing the index."""
 
