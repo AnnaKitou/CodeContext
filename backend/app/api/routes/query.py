@@ -51,22 +51,23 @@ def get_retriever() -> RAGRetriever:
 
 
 def get_mcp_server() -> MCPGithubServer | None:
-    """Create GitHub MCP server if GITHUB_TOKEN + repo are configured."""
+    """
+    Create the GitHub MCP server if a token is configured.
+
+    `GITHUB_REPO_OWNER`/`GITHUB_REPO_NAME` are only a cold-start seed —
+    `MCPGithubServer.repo` resolves the actual target dynamically from
+    whichever repo was most recently ingested, so this singleton stays
+    valid across ingests of different repos without being rebuilt.
+    """
     global _mcp_server
-    if _mcp_server is None and (
-        settings.GITHUB_TOKEN
-        and settings.GITHUB_REPO_OWNER
-        and settings.GITHUB_REPO_NAME
-    ):
+    if _mcp_server is None and settings.GITHUB_TOKEN:
         try:
             _mcp_server = MCPGithubServer(
                 github_token=settings.GITHUB_TOKEN,
                 repo_owner=settings.GITHUB_REPO_OWNER,
                 repo_name=settings.GITHUB_REPO_NAME,
             )
-            logger.info(
-                f"GitHub MCP server ready: {settings.GITHUB_REPO_OWNER}/{settings.GITHUB_REPO_NAME}"
-            )
+            logger.info("GitHub MCP server ready (token configured)")
         except Exception as e:
             logger.warning(f"Failed to initialize GitHub MCP server: {e}")
     return _mcp_server
@@ -123,7 +124,14 @@ def get_agent(
     adaptive_retriever: Annotated[AdaptiveRetriever | None, Depends(get_adaptive_retriever)] = None,
     answer_validator: Annotated[AnswerValidator | None, Depends(get_answer_validator)] = None,
 ) -> CodeContextAgent:
-    """Create enhanced CodeContextAgent with optional agentic services."""
+    """
+    Create enhanced CodeContextAgent with optional agentic services.
+
+    Safe to cache as a singleton: `agent.mcp_server` is a stable reference
+    to the `MCPGithubServer` singleton, whose `.repo` property re-resolves
+    the current repo on every call. So this agent automatically follows
+    new ingests without ever needing to be rebuilt.
+    """
     global _agent
     if _agent is None:
         _agent = CodeContextAgent(
